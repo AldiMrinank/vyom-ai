@@ -1,0 +1,22 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users can only read/write their own profile
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Users can only access their own conversations
+    match /conversations/{convId} {
+      allow read, write: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+
+      // Messages inside a conversation — only owner can access
+      match /messages/{msgId} {
+        allow read, write: if request.auth != null &&
+          get(/databases/$(database)/documents/conversations/$(convId)).data.userId == request.auth.uid;
+      }
+    }
+  }
+}
