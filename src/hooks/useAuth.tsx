@@ -17,6 +17,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const timeout = setTimeout(() => setLoading(false), 5000);
+    if (!auth) {
+      console.error("Firebase Auth is not initialized.");
+      setLoading(false);
+      return;
+    }
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setLoading(false);
@@ -30,7 +35,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       user,
       session: user, // alias
       loading,
-      signOut: () => fbSignOut(auth),
+      signOut: () => auth ? fbSignOut(auth) : Promise.resolve(),
     }}>
       {children}
     </Ctx.Provider>
