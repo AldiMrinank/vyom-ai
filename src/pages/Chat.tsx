@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { ChevronLeft, PenSquare, Copy, ThumbsUp, ThumbsDown, Mic, AudioLines, Plus, ArrowUp, RefreshCw, Share2, Download, ImagePlus, X, Check, ChevronDown, Search, Pencil, FileText, Paperclip } from "lucide-react";
-import { collection, addDoc, getDocs, query, orderBy, serverTimestamp, doc, updateDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, orderBy, serverTimestamp, doc, updateDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/integrations/firebase/config";
 import { useAuth } from "@/hooks/useAuth";
 import { streamChat, generateTitle, ChatMsg } from "@/lib/chat";
@@ -12,13 +12,20 @@ import MarkdownMessage from "@/components/MarkdownMessage";
 import Skeleton from "@/components/Skeleton";
 import vyomLogo from "@/assets/vyom-logo.png";
 
-interface Msg { id: string; role: "user"|"assistant"; content: string; createdAt?: any; image?: string }
+interface Msg { id: string; role: "user"|"assistant"; content: string; createdAt?: any; image?: string; failed?: boolean }
 
 const fmtTime = (ts: any) => {
   if (!ts) return "";
   const d = ts?.toDate ? ts.toDate() : new Date(ts);
   return d.toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
 };
+
+// Strips both the internal [Image attached] suffix and the [File: name]...
+// prefix that get added to stored message content, so neither leaks back
+// into the AI context on regenerate, nor shows up in the UI or exports.
+const FILE_PREFIX_RE = /^\[File: [^\]]+\]\n\n[\s\S]*?\n\n---\n\nUser question: /;
+const stripMeta = (content: string) =>
+  content.replace(FILE_PREFIX_RE, "").replace(/\n\n\[Image attached\]$/, "");
 
 const Chat = () => {
   const navigate = useNavigate();
@@ -47,16 +54,22 @@ const Chat = () => {
   const fileRef = useRef<HTMLInputElement>(null);
   const docRef = useRef<HTMLInputElement>(null);
   const seededQ = useRef<string|null>(null);
-  const isFirstMsg = useRef(true);
+  // Tracks how many messages already existed when this conversation was
+  // loaded, so we can reliably tell whether the current send() call is the
+  // very first exchange in a brand-new chat (used to decide when to
+  // auto-generate a title) without depending on a ref that could fall out
+  // of sync between "new chat" and "loaded existing chat" states.
+  const msgCountAtLoad = useRef<number>(0);
   const abortRef = useRef<AbortController|null>(null);
 
   useEffect(() => {
     if (!convId || !user) return;
-    isFirstMsg.current = false;
     setLoadingMsgs(true);
     const msgsRef = collection(db, "conversations", convId, "messages");
     getDocs(query(msgsRef, orderBy("createdAt","asc"))).then(snap => {
-      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as Msg)));
+      const loaded = snap.docs.map(d => ({ id: d.id, ...d.data() } as Msg));
+      setMessages(loaded);
+      msgCountAtLoad.current = loaded.length;
       setLoadingMsgs(false);
     }).catch(() => { toast.error("Failed to load chat"); setLoadingMsgs(false); });
   }, [convId, user]);
@@ -135,18 +148,39 @@ const Chat = () => {
     } catch (err) {
       if ((err as Error).name==="AbortError") { setMessages(m => m.filter(x => x.id!==tempId)); setStreaming(false); return; }
       toast.error(err instanceof Error ? err.message : "AI error");
-      setMessages(m => m.filter(x => x.id!==tempId)); setStreaming(false); return;
+      // The user's message was already saved to Firestore before the AI call
+      // ran, so it can't just be removed from the UI on failure — it's
+      // already part of the conversation history on reload. Mark it as
+      // failed instead, so the person can see what happened and retry,
+      // rather than being left with an unexplained message with no reply.
+      setMessages(m => m.filter(x => x.id!==tempId).map(x => x.id===userRef.id ? {...x, failed:true} : x));
+      setStreaming(false); return;
     }
 
-    const aiRef = await addDoc(msgsRef, { role:"assistant", content:acc, userId:user.uid, createdAt:serverTimestamp() });
-    setMessages(m => m.map(x => x.id===tempId ? {...x, id:aiRef.id} : x));
+    // Only persist an assistant message if we actually received content —
+    // an error thrown right after the stream finishes shouldn't leave a
+    // blank assistant message sitting in Firestore.
+    let aiSaved = false;
+    if (acc.trim()) {
+      aiSaved = true;
+      const aiRef = await addDoc(msgsRef, { role:"assistant", content:acc, userId:user.uid, createdAt:serverTimestamp() });
+      setMessages(m => m.map(x => x.id===tempId ? {...x, id:aiRef.id} : x));
+    } else {
+      setMessages(m => m.filter(x => x.id!==tempId));
+    }
 
-    if (isFirstMsg.current) {
-      isFirstMsg.current = false;
+    // Whether this was the first exchange in the conversation, derived from
+    // actual message counts rather than a ref that could go stale across
+    // new-chat vs loaded-chat transitions.
+    const isFirstExchange = msgCountAtLoad.current === 0 && (retryHistory ?? messages).length === 0;
+    if (isFirstExchange && aiSaved) {
+      msgCountAtLoad.current = 2;
       generateTitle(text, acc).then(title =>
         updateDoc(doc(db,"conversations",cid), { title, updatedAt:serverTimestamp() })
       );
-    } else updateDoc(doc(db,"conversations",cid), { updatedAt:serverTimestamp() });
+    } else {
+      updateDoc(doc(db,"conversations",cid), { updatedAt:serverTimestamp() });
+    }
     setStreaming(false);
   };
 
@@ -156,7 +190,24 @@ const Chat = () => {
     haptic([10,50,10]);
     const historyUpTo = messages.slice(0, messages.findLastIndex(m => m.role==="user"));
     setMessages(m => m.slice(0, m.findLastIndex(x => x.role==="user")));
-    await send(lastUser.content.replace(/\n\n\[Image attached\]$/,""), historyUpTo);
+    // Strip both the image suffix and the file prefix before re-sending, so
+    // re-sent file content doesn't get wrapped in another [File: ...] prefix.
+    await send(stripMeta(lastUser.content), historyUpTo);
+  };
+
+  // Retries a message that was saved but never got an AI reply (the AI call
+  // failed after the user's message was already written to Firestore). The
+  // failed message is safe to delete outright here, unlike a normal edit/
+  // regenerate — it never got a reply, so no other client could be relying
+  // on it being part of an already-completed exchange.
+  const retryFailed = async (msg: Msg) => {
+    if (!convId || streaming) return;
+    haptic(10);
+    const idx = messages.findIndex(m => m.id === msg.id);
+    const historyBefore = messages.slice(0, idx);
+    setMessages(m => m.filter(x => x.id !== msg.id));
+    try { await deleteDoc(doc(db, "conversations", convId, "messages", msg.id)); } catch {}
+    await send(stripMeta(msg.content), historyBefore);
   };
 
   const saveEdit = async (msg: Msg) => {
@@ -183,20 +234,20 @@ const Chat = () => {
 
   const shareChat = async () => {
     haptic(10);
-    const text = messages.map(m=>`${m.role==="user"?"You":"Vyom AI"}: ${m.content}`).join("\n\n");
+    const text = messages.map(m=>`${m.role==="user"?"You":"Vyom AI"}: ${stripMeta(m.content)}`).join("\n\n");
     if (navigator.share) { try { await navigator.share({title:"Vyom AI Chat",text}); return; } catch {} }
     await navigator.clipboard.writeText(text); toast.success("Chat copied");
   };
 
   const exportChat = () => {
     haptic(10);
-    const text = messages.map(m=>`[${m.role==="user"?"You":"Vyom AI"}]\n${m.content}`).join("\n\n---\n\n");
+    const text = messages.map(m=>`[${m.role==="user"?"You":"Vyom AI"}]\n${stripMeta(m.content)}`).join("\n\n---\n\n");
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text],{type:"text/plain"})); a.download="vyom-chat.txt"; a.click();
     toast.success("Chat exported");
   };
 
   const copy = (t: string) => { haptic(8); navigator.clipboard.writeText(t); toast.success("Copied"); };
-  const newChat = () => { setMessages([]); setConvId(null); isFirstMsg.current=true; navigate("/chat"); };
+  const newChat = () => { setMessages([]); setConvId(null); msgCountAtLoad.current=0; navigate("/chat"); };
   const maxChars = 4000;
   const visibleMsgs = searchQ.trim() ? messages.filter(m=>m.content.toLowerCase().includes(searchQ.toLowerCase())) : messages;
 
@@ -253,11 +304,17 @@ const Chat = () => {
                 </div>
               ) : (
                 <div className="group relative max-w-[82%]">
-                  <div className="rounded-2xl rounded-tr-sm border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm whitespace-pre-wrap">{m.content.replace(/\n\n\[Image attached\]$/,"")}</div>
-                  <button onClick={()=>{setEditingId(m.id);setEditVal(m.content.replace(/\n\n\[Image attached\]$/,""));haptic(8);}} className="absolute -left-8 top-2 opacity-0 group-hover:opacity-100 transition text-muted-foreground"><Pencil className="h-3.5 w-3.5"/></button>
+                  <div className="rounded-2xl rounded-tr-sm border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm whitespace-pre-wrap">{stripMeta(m.content)}</div>
+                  <button onClick={()=>{setEditingId(m.id);setEditVal(stripMeta(m.content));haptic(8);}} className="absolute -left-8 top-2 opacity-0 group-hover:opacity-100 transition text-muted-foreground"><Pencil className="h-3.5 w-3.5"/></button>
                 </div>
               )}
               {showTimestamps&&m.createdAt&&<p className="text-[10px] text-muted-foreground px-1">{fmtTime(m.createdAt)}</p>}
+              {m.failed && (
+                <button onClick={()=>retryFailed(m)} disabled={streaming}
+                  className="flex items-center gap-1.5 rounded-full bg-red-500/10 border border-red-500/30 px-3 py-1.5 text-[11px] text-red-400 disabled:opacity-50">
+                  <RefreshCw className="h-3 w-3"/> Failed to send — tap to retry
+                </button>
+              )}
             </div>
           ) : (
             <div key={m.id} className="flex animate-slide-up gap-3">

@@ -1,7 +1,18 @@
 import { loadSettings } from "./settings";
+import { auth } from "@/integrations/firebase/config";
 
 export interface ChatMsg { role: "user" | "assistant" | "system"; content: string | ContentPart[] }
 export interface ContentPart { type: "text" | "image_url"; text?: string; image_url?: { url: string } }
+
+// /api/chat requires a valid Firebase ID token on every request. This grabs
+// the current user's token (cached client-side by the SDK and refreshed
+// automatically when needed) to attach as a Bearer header.
+async function authHeaders(): Promise<Record<string,string>> {
+  const user = auth?.currentUser;
+  if (!user) throw new Error("You're signed out. Please sign in again.");
+  const token = await user.getIdToken();
+  return { Authorization: `Bearer ${token}` };
+}
 
 export async function streamChat({
   messages, onDelta, onDone, signal,
@@ -14,7 +25,7 @@ export async function streamChat({
   const { model, systemPrompt } = loadSettings();
   const resp = await fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: JSON.stringify({
       model,
       messages: [
@@ -56,12 +67,13 @@ export async function streamChat({
 }
 
 export async function generateTitle(userMsg: string, aiMsg: string): Promise<string> {
+  const { model } = loadSettings();
   try {
     const resp = await fetch("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
       body: JSON.stringify({
-        model: "openrouter/auto",
+        model,
         max_tokens: 15,
         messages: [
           { role: "system", content: "Generate a 3-5 word title for this conversation. Reply with ONLY the title, no quotes, no punctuation at end." },

@@ -43,6 +43,19 @@ In Cloudflare Pages → Settings → Environment variables, add:
 | `VITE_FIREBASE_MESSAGING_SENDER_ID` | from Firebase config |
 | `VITE_FIREBASE_APP_ID` | from Firebase config |
 | `OPENROUTER_KEY` | your OpenRouter key (no VITE_ prefix!) |
+| `FIREBASE_PROJECT_ID` | same value as `VITE_FIREBASE_PROJECT_ID`, but WITHOUT the `VITE_` prefix — used server-side to verify sign-in tokens |
+
+> **Why both?** Variables prefixed `VITE_` are bundled into the client JS and are public. `FIREBASE_PROJECT_ID` (no prefix) is only readable by the Cloudflare Function and is used to verify that incoming requests carry a real, valid Firebase sign-in token for *this* project — this is what closes the "anyone can find the URL and burn your OpenRouter key" hole.
+
+### Optional — per-user rate limiting
+The chat function will also rate-limit to 20 requests/minute per signed-in user if you bind a KV namespace called `RATE_LIMIT_KV`:
+```bash
+npx wrangler kv namespace create vyom-rate-limit
+# Then in Cloudflare Pages → Settings → Functions → KV namespace bindings:
+# Variable name: RATE_LIMIT_KV  →  select the namespace you just created
+```
+If you skip this, sign-in verification still applies — you just won't have the extra rate limit layer.
+
 
 ## Step 7 — Build & Deploy
 ```bash

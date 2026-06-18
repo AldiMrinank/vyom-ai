@@ -1,14 +1,13 @@
 import { Component, ReactNode, useState, useEffect, lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
-import { Toaster } from "@/components/ui/toaster";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { AuthProvider } from "@/hooks/useAuth";
+import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { loadSettings, applyFontSize } from "@/lib/settings";
+import { runAutoClear } from "@/lib/autoClear";
 import AppShell from "./components/AppShell";
 import OfflineIndicator from "./components/OfflineIndicator";
 import InstallPrompt from "./components/InstallPrompt";
@@ -55,6 +54,7 @@ class ErrorBoundary extends Component<{children:ReactNode},{err:string|null}> {
 const NAV_ORDER = ["/","/explore","/create","/history","/profile"];
 const SwipeNavigator = ({ children }: { children: ReactNode }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [touchX, setTouchX] = useState(0);
   useKeyboardShortcuts();
 
@@ -64,7 +64,10 @@ const SwipeNavigator = ({ children }: { children: ReactNode }) => {
     const idx = NAV_ORDER.indexOf(location.pathname);
     if (idx === -1) return;
     const next = diff > 0 ? NAV_ORDER[idx+1] : NAV_ORDER[idx-1];
-    if (next) window.history.pushState({}, "", next), window.dispatchEvent(new PopStateEvent("popstate"));
+    // navigate() keeps React Router's internal state in sync immediately,
+    // so anything reading useLocation() (like the active tab indicator)
+    // updates on the same render instead of lagging a frame behind.
+    if (next) navigate(next);
   };
 
   return (
@@ -78,6 +81,7 @@ const queryClient = new QueryClient();
 
 const AppInner = () => {
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const { user } = useAuth();
 
   useEffect(() => {
     // Apply saved font size on load
@@ -87,6 +91,10 @@ const AppInner = () => {
       return () => clearTimeout(t);
     }
   }, []);
+
+  useEffect(() => {
+    if (user) runAutoClear(user.uid);
+  }, [user]);
 
   return (
     <>
@@ -118,14 +126,12 @@ const App = () => (
   <ErrorBoundary>
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <Toaster /><Sonner />
-          <BrowserRouter>
-            <AuthProvider>
-              <AppInner />
-            </AuthProvider>
-          </BrowserRouter>
-        </TooltipProvider>
+        <Sonner />
+        <BrowserRouter>
+          <AuthProvider>
+            <AppInner />
+          </AuthProvider>
+        </BrowserRouter>
       </QueryClientProvider>
     </ThemeProvider>
   </ErrorBoundary>

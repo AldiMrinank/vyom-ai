@@ -14,9 +14,9 @@ export default defineConfig({
       output: {
         manualChunks: {
           "vendor-react": ["react","react-dom","react-router-dom"],
-          "vendor-supabase": ["@supabase/supabase-js"],
+          "vendor-firebase": ["firebase/app","firebase/auth","firebase/firestore"],
           "vendor-markdown": ["react-markdown","remark-gfm","react-syntax-highlighter"],
-          "vendor-ui": ["@radix-ui/react-dialog","@radix-ui/react-dropdown-menu","@radix-ui/react-select","@radix-ui/react-toast"],
+          "vendor-ui": ["@radix-ui/react-dialog","@radix-ui/react-slot"],
         },
       },
     },

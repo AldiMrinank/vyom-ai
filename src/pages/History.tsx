@@ -27,6 +27,10 @@ const History = () => {
   const [swipedId, setSwipedId] = useState<string|null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<"all"|"starred">("all");
+  // window.confirm() doesn't work reliably in iOS PWA standalone mode or
+  // some Android WebViews, so a destructive action like "clear all" needs
+  // its own in-app confirmation modal instead.
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
   const lastDocRef = useRef<any>(null);
   const touchStart = useRef<number>(0);
   const pullStart = useRef<number>(0);
@@ -63,7 +67,7 @@ const History = () => {
   const toggleStar = async (it:Conv,e:React.MouseEvent) => { e.stopPropagation();haptic(8);await updateDoc(doc(db,"conversations",it.id),{starred:!it.starred});setItems(prev=>prev.map(c=>c.id===it.id?{...c,starred:!it.starred}:c)); };
   const startRename=(it:Conv,e:React.MouseEvent)=>{e.stopPropagation();haptic(8);setRenamingId(it.id);setRenameVal(it.title);setSwipedId(null);};
   const confirmRename=async(id:string)=>{if(!renameVal.trim()){setRenamingId(null);return;}await updateDoc(doc(db,"conversations",id),{title:renameVal.trim()});setItems(it=>it.map(c=>c.id===id?{...c,title:renameVal.trim()}:c));setRenamingId(null);haptic(10);toast.success("Renamed");};
-  const clearAll=async()=>{if(!confirm("Delete all chats?"))return;haptic([10,50,10,50,10]);const snap=await getDocs(query(collection(db,"conversations"),where("userId","==",user?.uid)));await Promise.all(snap.docs.map(d=>deleteDoc(d.ref)));setItems([]);toast.success("History cleared");};
+  const clearAll=async()=>{setConfirmClearAll(false);haptic([10,50,10,50,10]);const snap=await getDocs(query(collection(db,"conversations"),where("userId","==",user?.uid)));await Promise.all(snap.docs.map(d=>deleteDoc(d.ref)));setItems([]);toast.success("History cleared");};
   const onTouchStartSwipe=(id:string,e:React.TouchEvent)=>{touchStart.current=e.touches[0].clientX;};
   const onTouchEndSwipe=(id:string,e:React.TouchEvent)=>{const diff=touchStart.current-e.changedTouches[0].clientX;if(diff>60){setSwipedId(id);haptic(8);}else if(diff<-20)setSwipedId(null);};
 
@@ -79,7 +83,7 @@ const History = () => {
           <div className="flex items-center gap-1">
             <button onClick={async()=>{haptic(8);setRefreshing(true);lastDocRef.current=null;await load(0);setRefreshing(false);}} className={`flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/5 ${refreshing?"animate-spin":""}`}><RefreshCw className="h-4 w-4"/></button>
             <button onClick={()=>{haptic(8);setShowSearch(s=>!s);}} className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/5"><Search className="h-4 w-4"/></button>
-            <button onClick={clearAll} className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/5"><Trash2 className="h-4 w-4"/></button>
+            <button onClick={()=>{haptic(8);setConfirmClearAll(true);}} className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/5"><Trash2 className="h-4 w-4"/></button>
           </div>
         </header>
         <div className="flex gap-2 mt-4">
@@ -119,6 +123,19 @@ const History = () => {
         </div>
         {hasMore&&!loading&&<div ref={loaderRef} className="py-4 text-center">{loadingMore&&<div className="text-xs text-muted-foreground animate-pulse">Loading more…</div>}</div>}
       </div>
+      {confirmClearAll && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-6 animate-fade-in" onClick={()=>setConfirmClearAll(false)}>
+          <div className="glass-card w-full max-w-xs p-5 text-center" onClick={e=>e.stopPropagation()}>
+            <Trash2 className="mx-auto h-8 w-8 text-red-400"/>
+            <p className="mt-3 font-display text-base font-semibold">Delete all chats?</p>
+            <p className="mt-1 text-xs text-muted-foreground">This permanently removes every conversation. This can't be undone.</p>
+            <div className="mt-4 flex gap-2">
+              <button onClick={()=>setConfirmClearAll(false)} className="flex-1 rounded-xl bg-white/5 border border-white/10 py-2.5 text-sm font-medium">Cancel</button>
+              <button onClick={clearAll} className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-medium text-white">Delete all</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

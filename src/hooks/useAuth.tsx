@@ -4,12 +4,11 @@ import { auth } from "@/integrations/firebase/config";
 
 interface AuthCtx {
   user: User | null;
-  session: User | null; // alias for compatibility
   loading: boolean;
   signOut: () => Promise<void>;
 }
 
-const Ctx = createContext<AuthCtx>({ user: null, session: null, loading: true, signOut: async () => {} });
+const Ctx = createContext<AuthCtx>({ user: null, loading: true, signOut: async () => {} });
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -33,7 +32,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   return (
     <Ctx.Provider value={{
       user,
-      session: user, // alias
       loading,
       signOut: () => auth ? fbSignOut(auth) : Promise.resolve(),
     }}>

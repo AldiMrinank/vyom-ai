@@ -42,8 +42,7 @@ const Home = () => {
 
   useEffect(() => {
     if (!user) return;
-  useEffect(() => {
-    if (!user) return;
+    
     // Profile
     getDoc(doc(db, "users", user.uid)).then(snap => {
       const d = snap.data() as any;
@@ -52,6 +51,7 @@ const Home = () => {
     }).catch(() => {
       setName(user.displayName || user.email?.split("@")[0] || "");
     });
+    
     // Recent chats
     getDocs(query(
       collection(db, "conversations"),
@@ -174,9 +174,9 @@ const Home = () => {
           placeholder="Message Vyom" className="w-full bg-transparent px-2 py-2 text-sm placeholder:text-muted-foreground focus:outline-none" />
         <div className="mt-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <button type="button" className="flex h-8 w-8 items-center justify-center rounded-full border border-border"><Plus className="h-3.5 w-3.5"/></button>
-            <button type="button" className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-[11px] font-medium"><Globe className="h-3 w-3"/> Search</button>
-            <button type="button" className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-[11px] font-medium"><Lightbulb className="h-3 w-3"/> Reason</button>
+            <button type="button" onClick={() => { haptic(8); navigate("/chat"); }} className="flex h-8 w-8 items-center justify-center rounded-full border border-border active:scale-95 transition"><Plus className="h-3.5 w-3.5"/></button>
+            <button type="button" onClick={() => send("Search the web for: ")} className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-[11px] font-medium active:scale-95 transition"><Globe className="h-3 w-3"/> Search</button>
+            <button type="button" onClick={() => send("Think step by step and reason through: ")} className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-[11px] font-medium active:scale-95 transition"><Lightbulb className="h-3 w-3"/> Reason</button>
           </div>
           <div className="flex items-center gap-2">
             {input.trim() ? (

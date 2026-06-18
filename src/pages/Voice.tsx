@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { X, Mic, MicOff, Loader2, Send, Globe } from "lucide-react";
-import VyomOrb from "@/components/VyomOrb";
+import EmotiveOrb, { ORB_STATES } from "@/components/EmotiveOrb";
+import type { OrbState } from "@/components/EmotiveOrb";
+import Waveform from "@/components/Waveform";
 import { streamChat } from "@/lib/chat";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/integrations/firebase/config";
@@ -18,11 +20,33 @@ const LANGS = [
   { code:"ja-JP", label:"Japanese" },
 ];
 
+// Maps the screen's real interaction state to an EmotiveOrb visual state.
+// "excited" / "surprised" aren't reachable from this real flow (no signal
+// in the data to trigger them) — they exist in EmotiveOrb for other screens
+// or future use (e.g. reacting to a particularly enthusiastic AI reply).
+function deriveOrbState(opts: {
+  supported: boolean;
+  errorMsg: string;
+  listening: boolean;
+  thinking: boolean;
+  justCompleted: boolean;
+  hasReply: boolean;
+}): OrbState {
+  const { supported, errorMsg, listening, thinking, justCompleted, hasReply } = opts;
+  if (!supported || errorMsg) return "error";
+  if (thinking) return "thinking";
+  if (listening) return "listening";
+  if (justCompleted) return "completed";
+  if (hasReply) return "responding";
+  return "idle";
+}
+
 const Voice = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const recogRef = useRef<any>(null);
   const silenceTimer = useRef<ReturnType<typeof setTimeout>|null>(null);
+  const completedTimer = useRef<ReturnType<typeof setTimeout>|null>(null);
 
   const [supported, setSupported] = useState(true);
   const [listening, setListening] = useState(false);
@@ -33,6 +57,7 @@ const Voice = () => {
   const [lang, setLang] = useState("en-US");
   const [showLangs, setShowLangs] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [justCompleted, setJustCompleted] = useState(false);
 
   useEffect(() => {
     const w = window as any;
@@ -46,6 +71,8 @@ const Voice = () => {
     const id = setInterval(() => setSeconds(s => s+1), 1000);
     return () => clearInterval(id);
   }, [listening]);
+
+  useEffect(() => () => { if (completedTimer.current) clearTimeout(completedTimer.current); }, []);
 
   const buildRecog = (selectedLang: string) => {
     const w = window as any;
@@ -72,7 +99,7 @@ const Voice = () => {
 
   const start = () => {
     haptic([10,50]);
-    setTranscript(""); setReply(""); setSeconds(0); setErrorMsg("");
+    setTranscript(""); setReply(""); setSeconds(0); setErrorMsg(""); setJustCompleted(false);
     const r = buildRecog(lang);
     if (!r) return;
     recogRef.current = r;
@@ -88,19 +115,45 @@ const Voice = () => {
   const submit = async (text?: string) => {
     const t = (text ?? transcript).trim();
     if (!t || thinking || !user) return;
-    stop(); setThinking(true); setReply(""); haptic(10);
-    const convRef = await addDoc(collection(db,"conversations"), { userId:user.uid, title:t.slice(0,60), starred:false, createdAt:serverTimestamp(), updatedAt:serverTimestamp() }); const conv = { id: convRef.id };
-    if (conv) await addDoc(collection(db,"conversations",conv.id,"messages"), { role:"user", content:t, userId:user.uid, createdAt:serverTimestamp() });
-    let acc="";
+    stop(); setThinking(true); setReply(""); setJustCompleted(false); haptic(10);
+
+    let acc = "";
     try {
       await streamChat({ messages:[{role:"user",content:t}], onDelta:c=>{acc+=c;setReply(acc);}, onDone:()=>{} });
-    } catch(e) { toast.error(e instanceof Error?e.message:"AI error"); setThinking(false); return; }
-    if (conv && acc) {
-      await addDoc(collection(db,"conversations",conv.id,"messages"), { role:"assistant", content:acc, userId:user.uid, createdAt:serverTimestamp() });
+    } catch(e) {
+      toast.error(e instanceof Error?e.message:"AI error");
+      setErrorMsg(e instanceof Error ? e.message : "AI error");
+      setThinking(false);
+      return;
+    }
+
+    // Only create the conversation (and write both messages) once we know
+    // the AI actually replied — this avoids ending up with a saved user
+    // message and no response if the AI call had failed, since this screen
+    // has no message thread UI to show a "failed, tap to retry" state on.
+    if (acc.trim()) {
+      try {
+        const convRef = await addDoc(collection(db,"conversations"), { userId:user.uid, title:t.slice(0,60), starred:false, createdAt:serverTimestamp(), updatedAt:serverTimestamp() });
+        await addDoc(collection(db,"conversations",convRef.id,"messages"), { role:"user", content:t, userId:user.uid, createdAt:serverTimestamp() });
+        await addDoc(collection(db,"conversations",convRef.id,"messages"), { role:"assistant", content:acc, userId:user.uid, createdAt:serverTimestamp() });
+      } catch {
+        // The reply still plays/displays even if saving to history fails —
+        // losing the AI's own answer after it already streamed back to the
+        // user would be a worse experience than just not persisting it.
+        toast.error("Reply ready, but couldn't save it to your history.");
+      }
       try { const u=new SpeechSynthesisUtterance(acc); u.rate=1; u.pitch=1; u.lang=lang; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch {}
+      // Briefly show the "completed" orb state once the reply has fully landed,
+      // then settle back into "responding" so the reply bubble stays legible.
+      setJustCompleted(true);
+      if (completedTimer.current) clearTimeout(completedTimer.current);
+      completedTimer.current = setTimeout(() => setJustCompleted(false), 1600);
     }
     setThinking(false);
   };
+
+  const orbState = deriveOrbState({ supported, errorMsg, listening, thinking, justCompleted, hasReply: !!reply });
+  const cfg = ORB_STATES[orbState];
 
   const mm=String(Math.floor(seconds/60)).padStart(2,"0");
   const ss=String(seconds%60).padStart(2,"0");
@@ -112,26 +165,27 @@ const Voice = () => {
     : "Tap the mic to speak";
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-between overflow-hidden px-6 py-10">
+    <div className="relative flex min-h-screen flex-col overflow-hidden px-5 py-5">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-1/2 top-1/3 h-[480px] w-[480px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-aurora opacity-20 blur-3xl animate-orb-pulse" />
       </div>
 
+      {/* Header — matches the reference's glass icon button layout */}
       <header className="relative z-10 flex w-full items-center justify-between">
-        <button onClick={()=>{stop();navigate(-1);}} className="glass flex h-10 w-10 items-center justify-center rounded-full">
-          <X className="h-4 w-4" />
+        <button onClick={()=>{stop();navigate(-1);}} className="glass flex h-11 w-11 items-center justify-center rounded-full active:scale-95 transition">
+          <X className="h-4.5 w-4.5" />
         </button>
         <div className="text-center">
           <p className="text-[10px] uppercase tracking-[0.3em] text-primary-glow">Voice mode</p>
           <p className="font-display text-sm font-semibold tabular-nums">{mm}:{ss}</p>
         </div>
-        <button onClick={()=>setShowLangs(s=>!s)} className="glass flex h-10 w-10 items-center justify-center rounded-full">
+        <button onClick={()=>setShowLangs(s=>!s)} className="glass flex h-11 w-11 items-center justify-center rounded-full active:scale-95 transition">
           <Globe className="h-4 w-4" />
         </button>
       </header>
 
       {showLangs && (
-        <div className="absolute top-20 right-6 z-20 glass-card rounded-2xl p-2 space-y-1 animate-fade-in shadow-neon">
+        <div className="absolute top-20 right-5 z-20 glass-card rounded-2xl p-2 space-y-1 animate-fade-in shadow-neon">
           {LANGS.map(l=>(
             <button key={l.code} onClick={()=>{setLang(l.code);setShowLangs(false);haptic(8);}}
               className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${lang===l.code?"bg-cyan-500/20 text-cyan-400":"text-muted-foreground hover:bg-white/5"}`}>
@@ -142,27 +196,46 @@ const Voice = () => {
         </div>
       )}
 
-      <div className="relative z-10 flex flex-col items-center text-center gap-4">
-        <VyomOrb size={200} active={listening||thinking} />
-        <p className="max-w-xs text-balance font-display text-lg font-medium text-foreground/90">{statusText}</p>
-        {transcript && <p className="max-w-xs rounded-2xl bg-white/5 border border-white/10 px-4 py-2.5 text-sm text-muted-foreground">"{transcript}"</p>}
+      {/* Hero — small badge + gradient title, matching the reference */}
+      <div className="relative z-10 flex flex-col items-center text-center mt-6 mb-1">
+        <span className="inline-flex items-center gap-1 rounded-full bg-white/[0.06] border border-white/10 px-3 py-1 text-[11px] font-medium text-white/80 mb-3">
+          ✨ GenZ AI
+        </span>
+        <h1 className="text-[30px] font-bold leading-none font-display"
+          style={{ background: "linear-gradient(90deg, #A78BFA 0%, #60A5FA 55%, #22D3EE 100%)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>
+          AI Voice
+        </h1>
+        <p className="text-[13px] text-white/50 mt-1.5">{statusText}</p>
+      </div>
+
+      {/* Orb + waveforms */}
+      <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-3 -mt-4">
+        <div className="flex items-center justify-center gap-1">
+          <Waveform side="left" amp={cfg.waveAmp} speed={cfg.waveSpeed} color="#8B5CF6" />
+          <EmotiveOrb state={orbState} size={200} onTap={listening ? stop : start} />
+          <Waveform side="right" amp={cfg.waveAmp} speed={cfg.waveSpeed} color="#22D3EE" />
+        </div>
+
+        <div className="flex items-center justify-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: cfg.dot, boxShadow: `0 0 8px ${cfg.dot}` }} />
+          <span className="text-[12px] text-white/60 font-medium">{cfg.label}</span>
+        </div>
+
+        {transcript && (
+          <p className="max-w-xs text-balance rounded-2xl bg-white/5 border border-white/10 px-4 py-2.5 text-sm text-muted-foreground animate-fade-in">
+            "{transcript}"
+          </p>
+        )}
         {reply && (
-          <div className="max-w-xs max-h-40 overflow-y-auto rounded-2xl bg-white/5 border border-white/10 px-4 py-3 text-sm text-foreground/85 text-left">
+          <div className="max-w-xs max-h-40 overflow-y-auto rounded-2xl bg-white/5 border border-white/10 px-4 py-3 text-sm text-foreground/85 text-left animate-fade-in">
             {reply}
           </div>
         )}
       </div>
 
-      <div className="relative z-10 flex h-14 items-end gap-1">
-        {Array.from({length:20}).map((_,i)=>(
-          <span key={i} className="w-1.5 origin-bottom rounded-full bg-gradient-aurora"
-            style={{ height:`${14+(i%5)*8}px`, animation:listening?`voice-wave 1.2s ease-in-out infinite`:"none",
-              animationDelay:`${i*0.07}s`, opacity:listening?1:0.25 }} />
-        ))}
-      </div>
-
-      <div className="relative z-10 flex items-center gap-6">
-        <button onClick={()=>navigate("/chat")} className="glass flex h-14 w-14 items-center justify-center rounded-full">
+      {/* Bottom controls */}
+      <div className="relative z-10 flex items-center justify-center gap-6 pb-2">
+        <button onClick={()=>navigate("/chat")} className="glass flex h-14 w-14 items-center justify-center rounded-full active:scale-95 transition">
           <span className="text-xs font-semibold">Aa</span>
         </button>
         {thinking ? (
@@ -179,7 +252,7 @@ const Voice = () => {
             {listening?<MicOff className="h-7 w-7 text-primary-foreground"/>:<Mic className="h-7 w-7 text-primary-foreground"/>}
           </button>
         )}
-        <button onClick={()=>{stop();setTranscript("");setReply("");haptic(8);}} className="glass flex h-14 w-14 items-center justify-center rounded-full">
+        <button onClick={()=>{stop();setTranscript("");setReply("");setErrorMsg("");setJustCompleted(false);haptic(8);}} className="glass flex h-14 w-14 items-center justify-center rounded-full active:scale-95 transition">
           <X className="h-5 w-5"/>
         </button>
       </div>

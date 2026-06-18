@@ -9,8 +9,13 @@ service cloud.firestore {
 
     // Users can only access their own conversations
     match /conversations/{convId} {
-      allow read, write: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow read, delete: if request.auth != null && resource.data.userId == request.auth.uid;
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Updates must be made by the current owner, and can't change who owns
+      // the conversation afterward.
+      allow update: if request.auth != null
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid;
 
       // Messages inside a conversation — only owner can access
       match /messages/{msgId} {
