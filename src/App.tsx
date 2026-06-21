@@ -24,6 +24,8 @@ const Create   = lazy(() => import("./pages/Create"));
 const Voice    = lazy(() => import("./pages/Voice"));
 const Auth     = lazy(() => import("./pages/Auth"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const Library  = lazy(() => import("./pages/Library"));
+const Research = lazy(() => import("./pages/Research"));
 
 const PageLoader = () => (
   <div className="px-5 pt-5 space-y-4">
@@ -39,7 +41,7 @@ class ErrorBoundary extends Component<{children:ReactNode},{err:string|null}> {
   static getDerivedStateFromError(e:Error){return{err:e.message};}
   render(){
     if(this.state.err) return(
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[#080810] text-white px-6 text-center">
+      <div className="flex min-h-dvh flex-col items-center justify-center bg-[#080810] text-white px-6 text-center">
         <div className="text-4xl mb-4">⚠️</div>
         <h1 className="text-xl font-bold mb-2">Something went wrong</h1>
         <p className="text-white/50 text-sm mb-6">{this.state.err}</p>
@@ -110,6 +112,8 @@ const AppInner = () => {
               <Route path="/history" element={<History />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/create" element={<Create />} />
+              <Route path="/library" element={<Library />} />
+              <Route path="/research" element={<Research />} />
             </Route>
             <Route path="/voice" element={<ProtectedRoute><Voice /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />

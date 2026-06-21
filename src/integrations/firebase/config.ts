@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
@@ -11,16 +11,22 @@ const firebaseConfig = {
   appId:             import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase only if API key is present to prevent crashing
-let app;
-let auth;
-let db;
+let app: ReturnType<typeof initializeApp> | undefined;
+let auth: ReturnType<typeof getAuth> | undefined;
+let db: ReturnType<typeof initializeFirestore> | undefined;
 
 if (firebaseConfig.apiKey) {
   try {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
-    db = getFirestore(app);
+    // Enable offline persistence with multi-tab support.
+    // This means Firestore reads are served from IndexedDB cache instantly
+    // when offline, and sync to the server when the connection returns.
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    });
   } catch (error) {
     console.error("Firebase initialization failed:", error);
   }

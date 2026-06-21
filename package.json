@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",
+    "ci:build": "npm install --no-audit --no-fund && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
@@ -39,7 +40,9 @@
     "canvas-confetti": "^1.9.3",
     "@types/canvas-confetti": "^1.9.0",
     "firebase": "^11.0.0",
-    "jose": "^5.9.6"
+    "jose": "^5.9.6",
+    "react-window": "^1.8.10",
+    "@types/react-window": "^1.8.8"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",

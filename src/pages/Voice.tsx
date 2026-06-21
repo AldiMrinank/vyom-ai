@@ -165,7 +165,7 @@ const Voice = () => {
     : "Tap the mic to speak";
 
   return (
-    <div className="relative flex min-h-screen flex-col overflow-hidden px-5 py-5">
+    <div className="relative flex min-h-dvh flex-col overflow-hidden px-5 py-5">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-1/2 top-1/3 h-[480px] w-[480px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-aurora opacity-20 blur-3xl animate-orb-pulse" />
       </div>

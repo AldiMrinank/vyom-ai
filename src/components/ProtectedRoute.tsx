@@ -5,7 +5,7 @@ import VyomOrb from "./VyomOrb";
 export const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   if (loading) return (
-    <div className="flex min-h-screen items-center justify-center">
+    <div className="flex min-h-dvh items-center justify-center">
       <VyomOrb size={120} active />
     </div>
   );

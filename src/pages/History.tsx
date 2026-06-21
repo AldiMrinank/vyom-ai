@@ -76,7 +76,7 @@ const History = () => {
   const starredCount=items.filter(i=>i.starred).length;
 
   return (
-    <div ref={containerRef} className="h-screen overflow-y-auto" onTouchStart={onTouchStartPull} onTouchEnd={onTouchEndPull}>
+    <div ref={containerRef} className="h-dvh overflow-y-auto" onTouchStart={onTouchStartPull} onTouchEnd={onTouchEndPull}>
       <div className="px-5 pt-5 pb-28">
         <header className="flex items-center justify-between">
           <h1 className="font-display text-3xl font-bold">History</h1>

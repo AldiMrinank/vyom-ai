@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -11,7 +11,9 @@ import { haptic } from "@/lib/haptic";
 
 interface Props { content: string; streaming?: boolean }
 
-const CodeBlock = ({ lang, code }: { lang: string; code: string }) => {
+// Memoized separately so a code block doesn't re-render when unrelated state
+// in the parent changes (e.g. another message streaming in).
+const CodeBlock = memo(({ lang, code }: { lang: string; code: string }) => {
   const [copied, setCopied] = useState(false);
   const copy = () => {
     haptic(8); navigator.clipboard.writeText(code);
@@ -32,7 +34,7 @@ const CodeBlock = ({ lang, code }: { lang: string; code: string }) => {
       </SyntaxHighlighter>
     </div>
   );
-};
+});
 
 const MarkdownMessage = ({ content, streaming }: Props) => (
   <div className="text-sm leading-relaxed text-foreground/90 min-w-0 [font-size:var(--base-font-size,15px)]">
@@ -73,4 +75,7 @@ const MarkdownMessage = ({ content, streaming }: Props) => (
   </div>
 );
 
-export default MarkdownMessage;
+// Memoize the whole component: only re-render when content or streaming flag
+// actually changes. This prevents all previous messages from re-parsing their
+// markdown/math/syntax-highlighting on every streaming token of a new reply.
+export default memo(MarkdownMessage);

@@ -20,12 +20,13 @@ const DEFAULTS: VyomSettings = {
 // starts, and reasoning models deliberately "think" before answering, which
 // reads as slow even though it's working as designed.
 export const MODELS = [
+  { id: "vyom-auto",                                label: "⚡ Smart Route",  desc: "Auto-picks best model for your task" },
   { id: "google/gemini-2.0-flash-exp:free",         label: "Gemini 2.0 Flash", desc: "Fastest · Vision + text" },
-  { id: "google/gemma-3-12b-it:free",               label: "Gemma 3",     desc: "Google · Fast & smart" },
-  { id: "meta-llama/llama-3.3-70b-instruct:free",   label: "Llama 3.3",   desc: "Meta · Strong at coding" },
-  { id: "openrouter/auto",                          label: "Auto",        desc: "Picks a model for you (slower to start)" },
-  { id: "deepseek/deepseek-r1:free",                label: "DeepSeek R1", desc: "Reasoning · Deep thinking (slower)" },
-  { id: "microsoft/phi-4-reasoning:free",           label: "Phi-4",       desc: "Microsoft · Reasoning (slower)" },
+  { id: "google/gemma-3-12b-it:free",               label: "Gemma 3",          desc: "Google · Fast & smart" },
+  { id: "meta-llama/llama-3.3-70b-instruct:free",   label: "Llama 3.3",        desc: "Meta · Strong at coding" },
+  { id: "openrouter/auto",                           label: "Auto",             desc: "Picks a model for you (slower to start)" },
+  { id: "deepseek/deepseek-r1:free",                label: "DeepSeek R1",      desc: "Reasoning · Deep thinking (slower)" },
+  { id: "microsoft/phi-4-reasoning:free",           label: "Phi-4",            desc: "Microsoft · Reasoning (slower)" },
 ];
 
 export const FONT_SIZES = [

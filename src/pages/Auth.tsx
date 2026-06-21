@@ -227,13 +227,13 @@ const Auth = () => {
   );
 
   return (
-    <div className="relative min-h-screen bg-[#080810] overflow-x-hidden">
+    <div className="relative min-h-dvh bg-[#080810] overflow-x-hidden">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-indigo-700/10 blur-[130px]"/>
         <div className="absolute bottom-0 left-1/4 w-[400px] h-[400px] rounded-full bg-cyan-700/8 blur-[110px]"/>
       </div>
 
-      <div className="relative mx-auto flex min-h-screen w-full max-w-sm flex-col items-center px-5 py-8 overflow-y-auto">
+      <div className="relative mx-auto flex min-h-dvh w-full max-w-sm flex-col items-center px-5 py-8 overflow-y-auto">
 
         {/* ═══ SIGN IN ═══ */}
         {screen==="signin" && (

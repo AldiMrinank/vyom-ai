@@ -1,4 +1,5 @@
 import { loadSettings } from "./settings";
+import { routePrompt } from "./modelRouter";
 import { auth } from "@/integrations/firebase/config";
 
 export interface ChatMsg { role: "user" | "assistant" | "system"; content: string | ContentPart[] }
@@ -14,6 +15,19 @@ async function authHeaders(): Promise<Record<string,string>> {
   return { Authorization: `Bearer ${token}` };
 }
 
+/**
+ * Resolves which model to actually send to OpenRouter.
+ * If the user picked "vyom-auto" (Smart Route), the model router picks
+ * based on prompt content. Otherwise the user's explicit choice is respected.
+ */
+function resolveModel(userMsg: string): string {
+  const { model } = loadSettings();
+  if (model === "vyom-auto") {
+    return routePrompt(userMsg).model;
+  }
+  return model;
+}
+
 export async function streamChat({
   messages, onDelta, onDone, signal,
 }: {
@@ -22,7 +36,13 @@ export async function streamChat({
   onDone: () => void;
   signal?: AbortSignal;
 }) {
-  const { model, systemPrompt } = loadSettings();
+  const { systemPrompt } = loadSettings();
+  const lastUserMsg = [...messages].reverse().find(m => m.role === "user");
+  const promptText = typeof lastUserMsg?.content === "string"
+    ? lastUserMsg.content
+    : (lastUserMsg?.content as any[])?.[0]?.text ?? "";
+  const model = resolveModel(promptText);
+
   const resp = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
@@ -67,7 +87,10 @@ export async function streamChat({
 }
 
 export async function generateTitle(userMsg: string, aiMsg: string): Promise<string> {
-  const { model } = loadSettings();
+  // Title generation always uses the fast Flash model regardless of the
+  // user's selected model — it's a 15-token call, reasoning models are
+  // wasteful here.
+  const model = "google/gemini-2.0-flash-exp:free";
   try {
     const resp = await fetch("/api/chat", {
       method: "POST",

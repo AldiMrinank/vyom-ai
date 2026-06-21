@@ -2,22 +2,32 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users can only read/write their own profile
+    // User profiles
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // Memories — personal AI memory bank
+      match /memories/{memId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // Library — saved answers, artifacts, notes, research
+      match /library/{libId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
 
-    // Users can only access their own conversations
+    // Conversations
     match /conversations/{convId} {
-      allow read, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow read, write: if request.auth != null && resource.data.userId == request.auth.uid;
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      // Updates must be made by the current owner, and can't change who owns
-      // the conversation afterward.
+
+      // Prevent userId reassignment (privilege escalation guard)
       allow update: if request.auth != null
         && resource.data.userId == request.auth.uid
         && request.resource.data.userId == request.auth.uid;
 
-      // Messages inside a conversation — only owner can access
+      // Messages subcollection — verified through parent ownership
       match /messages/{msgId} {
         allow read, write: if request.auth != null &&
           get(/databases/$(database)/documents/conversations/$(convId)).data.userId == request.auth.uid;

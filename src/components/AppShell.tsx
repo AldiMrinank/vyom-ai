@@ -1,15 +1,15 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { Home, Compass, MessageSquare, Clock, User, Sparkles } from "lucide-react";
+import { Home, Compass, Telescope, Clock, User, BookMarked } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
-import { collection, query, where, orderBy, getDocs, limit } from "firebase/firestore";
+import { collection, query, where, getDocs, limit } from "firebase/firestore";
 import { db } from "@/integrations/firebase/config";
 import { useAuth } from "@/hooks/useAuth";
 
 const AppShell = () => {
   const location = useLocation();
   return (
-    <div className="relative mx-auto flex min-h-screen w-full max-w-md flex-col">
+    <div className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col">
       <main key={location.pathname} className="flex-1 animate-fade-in pb-28">
         <Outlet />
       </main>
@@ -35,21 +35,21 @@ const BottomNav = () => {
   }, [user]);
 
   const navItems = [
-    { to: "/",        icon: Home,     label: "Home"    },
-    { to: "/explore", icon: Compass,  label: "Explore" },
-    { to: "/create",  icon: Sparkles, label: "Create", center: true },
-    { to: "/history", icon: Clock,    label: "History", badge: unread },
-    { to: "/profile", icon: User,     label: "Profile" },
+    { to: "/",         icon: Home,      label: "Home"     },
+    { to: "/explore",  icon: Compass,   label: "Explore"  },
+    { to: "/research", icon: Telescope, label: "Research", center: true },
+    { to: "/library",  icon: BookMarked,label: "Library"  },
+    { to: "/profile",  icon: User,      label: "Profile"  },
   ];
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-md px-4 pb-4">
+    <nav className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-md px-4" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}>
       <div className="glass-card flex items-center justify-around rounded-full px-2 py-2 shadow-neon">
         {navItems.map(item => (
           <NavLink
             key={item.to} to={item.to} end={item.to === "/"}
             onClick={() => {
-              if (item.to === "/history") {
+              if (item.to === "/library") {
                 localStorage.setItem("last_visit", new Date().toISOString());
                 setUnread(0);
               }
@@ -61,7 +61,7 @@ const BottomNav = () => {
             )}>
             {({ isActive }) =>
               item.center ? (
-                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-aurora shadow-neon transition-transform group-hover:scale-110 group-active:scale-95">
+                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-aurora shadow-neon transition-transform group-hover:scale-110 group-active:scale-95" title="Deep Research">
                   <item.icon className="h-6 w-6 text-primary-foreground" strokeWidth={2.5} />
                 </span>
               ) : (
