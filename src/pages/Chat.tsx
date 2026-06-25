@@ -301,9 +301,9 @@ const Chat = () => {
     const isFirstExchange = msgCountAtLoad.current === 0 && (retryHistory ?? messages).length === 0;
     if (isFirstExchange && aiSaved && db) {
       msgCountAtLoad.current = 2;
-      generateTitle(text, acc).then(title =>
-        if (db) updateDoc(doc(db, "conversations", cid), { title, updatedAt:serverTimestamp() })
-      ).catch(() => {});
+      generateTitle(text, acc).then(title => {
+        if (db) updateDoc(doc(db, "conversations", cid), { title, updatedAt:serverTimestamp() });
+      }).catch(() => {});
     } else if (db) {
       updateDoc(doc(db, "conversations", cid), { updatedAt:serverTimestamp() }).catch(() => {});
     }
