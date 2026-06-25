@@ -23,7 +23,7 @@ const BottomNav = () => {
   const [unread, setUnread] = useState(0);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !db) return;
     const last = localStorage.getItem("last_visit") || new Date(0).toISOString();
     getDocs(query(
       collection(db, "conversations"),

@@ -38,7 +38,7 @@ const History = () => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async (offset=0) => {
-    if (!user) return;
+    if (!user || !db) return;
     if (offset===0) setLoading(true); else setLoadingMore(true);
     try {
       let q = query(collection(db,"conversations"), where("userId","==",user.uid), orderBy("updatedAt","desc"), limit(PAGE));
@@ -63,11 +63,11 @@ const History = () => {
   const onTouchStartPull=(e:React.TouchEvent)=>{pullStart.current=e.touches[0].clientY;};
   const onTouchEndPull=async(e:React.TouchEvent)=>{const diff=e.changedTouches[0].clientY-pullStart.current;if(diff>70&&(containerRef.current?.scrollTop??0)===0){haptic([10,50,10]);setRefreshing(true);lastDocRef.current=null;await load(0);setRefreshing(false);}};
 
-  const del = async (id:string) => { haptic([10,50,10]);await deleteDoc(doc(db,"conversations",id));setItems(it=>it.filter(c=>c.id!==id));setSwipedId(null);toast.success("Deleted"); };
-  const toggleStar = async (it:Conv,e:React.MouseEvent) => { e.stopPropagation();haptic(8);await updateDoc(doc(db,"conversations",it.id),{starred:!it.starred});setItems(prev=>prev.map(c=>c.id===it.id?{...c,starred:!it.starred}:c)); };
+  const del = async (id:string) => { if(!db)return; haptic([10,50,10]);try{await deleteDoc(doc(db,"conversations",id));setItems(it=>it.filter(c=>c.id!==id));setSwipedId(null);toast.success("Deleted");}catch{toast.error("Failed to delete");} };
+  const toggleStar = async (it:Conv,e:React.MouseEvent) => { if(!db)return; e.stopPropagation();haptic(8);try{await updateDoc(doc(db,"conversations",it.id),{starred:!it.starred});setItems(prev=>prev.map(c=>c.id===it.id?{...c,starred:!it.starred}:c));}catch{toast.error("Failed to star");} };
   const startRename=(it:Conv,e:React.MouseEvent)=>{e.stopPropagation();haptic(8);setRenamingId(it.id);setRenameVal(it.title);setSwipedId(null);};
-  const confirmRename=async(id:string)=>{if(!renameVal.trim()){setRenamingId(null);return;}await updateDoc(doc(db,"conversations",id),{title:renameVal.trim()});setItems(it=>it.map(c=>c.id===id?{...c,title:renameVal.trim()}:c));setRenamingId(null);haptic(10);toast.success("Renamed");};
-  const clearAll=async()=>{setConfirmClearAll(false);haptic([10,50,10,50,10]);const snap=await getDocs(query(collection(db,"conversations"),where("userId","==",user?.uid)));await Promise.all(snap.docs.map(d=>deleteDoc(d.ref)));setItems([]);toast.success("History cleared");};
+  const confirmRename=async(id:string)=>{if(!renameVal.trim()||!db){setRenamingId(null);return;}try{await updateDoc(doc(db,"conversations",id),{title:renameVal.trim()});setItems(it=>it.map(c=>c.id===id?{...c,title:renameVal.trim()}:c));setRenamingId(null);haptic(10);toast.success("Renamed");}catch{toast.error("Failed to rename");}};
+  const clearAll=async()=>{if(!db||!user)return;setConfirmClearAll(false);haptic([10,50,10,50,10]);try{const snap=await getDocs(query(collection(db,"conversations"),where("userId","==",user.uid)));await Promise.all(snap.docs.map(d=>deleteDoc(d.ref)));setItems([]);toast.success("History cleared");}catch{toast.error("Failed to clear history");}};
   const onTouchStartSwipe=(id:string,e:React.TouchEvent)=>{touchStart.current=e.touches[0].clientX;};
   const onTouchEndSwipe=(id:string,e:React.TouchEvent)=>{const diff=touchStart.current-e.changedTouches[0].clientX;if(diff>60){setSwipedId(id);haptic(8);}else if(diff<-20)setSwipedId(null);};
 

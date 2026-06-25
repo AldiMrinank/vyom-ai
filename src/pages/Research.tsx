@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, Telescope, Search, Play, CheckCircle2, Circle, Loader2, FileText, ExternalLink, Download } from "lucide-react";
+import { ChevronLeft, Telescope, Search, Play, CheckCircle2, Circle, Loader2, FileText, ExternalLink, Download, StopCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { streamChat } from "@/lib/chat";
 import { webSearch } from "@/lib/search";
@@ -29,14 +29,37 @@ export default function Research() {
   const [sources, setSources] = useState<Source[]>([]);
   const [report, setReport] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
 
-  const updateStep = (id: string, patch: Partial<ResearchStep>) =>
-    setSteps(s => s.map(x => x.id === id ? { ...x, ...patch } : x));
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+    };
+  }, []);
 
-  const run = async () => {
+  const updateStep = useCallback((id: string, patch: Partial<ResearchStep>) =>
+    setSteps(s => s.map(x => x.id === id ? { ...x, ...patch } : x)), []);
+
+  const cancel = useCallback(() => {
+    abortRef.current?.abort();
+    if (mountedRef.current) {
+      setPhase("idle");
+      setStreaming(false);
+      setSteps(s => s.map(x => x.status === "running" ? { ...x, status: "error" as const } : x));
+      toast.info("Research cancelled");
+    }
+  }, []);
+
+  const run = useCallback(async () => {
     if (!query.trim() || !user) return;
     haptic(10);
-    setReport(""); setSources([]); setStreaming(false);
+    abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
+
+    if (mountedRef.current) { setReport(""); setSources([]); setStreaming(false); }
 
     // Initialise steps
     const initSteps: ResearchStep[] = [
@@ -63,6 +86,7 @@ Reply with ONLY a JSON array of strings, no other text. Example: ["sub-q 1", "su
             "Authorization": `Bearer ${await user.getIdToken()}` },
           body: JSON.stringify({ model: "google/gemini-2.0-flash-exp:free", max_tokens: 200,
             messages: [{ role: "user", content: planPrompt }] }),
+          signal,
         });
         if (planResp.ok) {
           const reader = planResp.body!.getReader();
@@ -150,6 +174,7 @@ Write in a clear, factual, well-organized style. Cite sources inline.`;
           model: "meta-llama/llama-3.3-70b-instruct:free",
           messages: [{ role: "user", content: reportPrompt }],
         }),
+        signal,
       });
 
       if (!resp.ok || !resp.body) throw new Error("Report generation failed");
@@ -168,18 +193,23 @@ Write in a clear, factual, well-organized style. Cite sources inline.`;
         }
       }
 
-      setStreaming(false);
-      updateStep("write", { status: "done", detail: "Report complete" });
-      setPhase("done");
+      if (mountedRef.current) {
+        setStreaming(false);
+        updateStep("write", { status: "done", detail: "Report complete" });
+        setPhase("done");
+      }
     } catch (err) {
+      if (!mountedRef.current) return;
+      // Ignore abort errors — those are intentional cancellations
+      if ((err as Error).name === "AbortError") return;
       setPhase("error");
       setStreaming(false);
       steps.forEach(s => { if (s.status === "running") updateStep(s.id, { status: "error" }); });
       toast.error("Research failed — try again");
     }
-  };
+  }, [user, query, updateStep, steps]);
 
-  const saveReport = async () => {
+  const saveReport = useCallback(async () => {
     if (!user || !report) return;
     haptic(10);
     await saveToLibrary(user.uid, {
@@ -189,15 +219,15 @@ Write in a clear, factual, well-organized style. Cite sources inline.`;
       tags: ["research"],
     });
     toast.success("Saved to Library");
-  };
+  }, [user, report, query]);
 
-  const download = () => {
+  const download = useCallback(() => {
     const blob = new Blob([report], { type: "text/markdown" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `research-${query.slice(0, 30).replace(/\s+/g, "-")}.md`;
     a.click();
-  };
+  }, [report, query]);
 
   return (
     <div className="min-h-dvh flex flex-col">
@@ -223,12 +253,20 @@ Write in a clear, factual, well-organized style. Cite sources inline.`;
             className="w-full bg-transparent text-sm focus:outline-none resize-none placeholder:text-muted-foreground" />
           <div className="flex items-center justify-between mt-3">
             <p className="text-[11px] text-muted-foreground">Searches the web · Synthesizes sources · Generates report</p>
-            <button onClick={run} disabled={!query.trim() || (phase !== "idle" && phase !== "done" && phase !== "error")}
-              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 active:scale-95 transition">
-              {phase === "idle" || phase === "done" || phase === "error"
-                ? <><Play className="h-3.5 w-3.5" /> Research</>
-                : <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Researching…</>}
-            </button>
+            <div className="flex gap-2">
+              {(phase !== "idle" && phase !== "done" && phase !== "error") && (
+                <button onClick={cancel} aria-label="Cancel research"
+                  className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-400 active:scale-95 transition">
+                  <StopCircle className="h-3.5 w-3.5" aria-hidden /> Cancel
+                </button>
+              )}
+              <button onClick={run} disabled={!query.trim() || (phase !== "idle" && phase !== "done" && phase !== "error")}
+                className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 active:scale-95 transition">
+                {phase === "idle" || phase === "done" || phase === "error"
+                  ? <><Play className="h-3.5 w-3.5" aria-hidden /> Research</>
+                  : <><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> Researching…</>}
+              </button>
+            </div>
           </div>
         </div>
 

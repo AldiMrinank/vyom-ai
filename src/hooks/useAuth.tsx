@@ -15,25 +15,33 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const timeout = setTimeout(() => setLoading(false), 5000);
+    // No timeout hack — we rely solely on Firebase's onAuthStateChanged.
+    // Firebase always fires this callback (even when offline, using cached
+    // credentials from IndexedDB), so it is safe to wait indefinitely.
+    // The only case it wouldn't fire is if auth is completely undefined
+    // (missing env vars), which we handle immediately below.
     if (!auth) {
-      console.error("Firebase Auth is not initialized.");
+      console.error("Firebase Auth is not initialized — check VITE_FIREBASE_* env vars.");
       setLoading(false);
       return;
     }
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setLoading(false);
-      clearTimeout(timeout);
-    });
-    return () => { unsub(); clearTimeout(timeout); };
+    const unsub = onAuthStateChanged(
+      auth,
+      (u) => { setUser(u); setLoading(false); },
+      (err) => { console.error("Auth state error:", err); setLoading(false); }
+    );
+    return unsub;
   }, []);
 
   return (
     <Ctx.Provider value={{
       user,
       loading,
-      signOut: () => auth ? fbSignOut(auth) : Promise.resolve(),
+      signOut: async () => {
+        if (auth) {
+          await fbSignOut(auth);
+        }
+      },
     }}>
       {children}
     </Ctx.Provider>

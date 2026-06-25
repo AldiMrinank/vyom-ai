@@ -41,7 +41,7 @@ const Home = () => {
   const [recentChats, setRecentChats] = useState<RecentChat[]>([]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !db) return;
     
     // Profile
     getDoc(doc(db, "users", user.uid)).then(snap => {

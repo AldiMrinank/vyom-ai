@@ -18,7 +18,13 @@ export interface LibraryItem {
   createdAt: any;
 }
 
-const COL = (uid: string) => collection(db!, "users", uid, "library");
+// Guard: throws a clear error instead of crashing with a cryptic bang-operator failure
+function getDb() {
+  if (!db) throw new Error("Firestore not initialized — check Firebase env vars");
+  return db;
+}
+
+const COL = (uid: string) => collection(getDb(), "users", uid, "library");
 
 export async function saveToLibrary(
   uid: string,
@@ -39,9 +45,9 @@ export async function getLibrary(uid: string, type?: LibraryItemType): Promise<L
 }
 
 export async function deleteFromLibrary(uid: string, id: string): Promise<void> {
-  await deleteDoc(doc(db!, "users", uid, "library", id));
+  await deleteDoc(doc(getDb(), "users", uid, "library", id));
 }
 
 export async function updateLibraryTags(uid: string, id: string, tags: string[]): Promise<void> {
-  await updateDoc(doc(db!, "users", uid, "library", id), { tags });
+  await updateDoc(doc(getDb(), "users", uid, "library", id), { tags });
 }

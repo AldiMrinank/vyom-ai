@@ -74,6 +74,18 @@ const Voice = () => {
 
   useEffect(() => () => { if (completedTimer.current) clearTimeout(completedTimer.current); }, []);
 
+  // Fix: clear silenceTimer on unmount to prevent it firing after component is gone
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (silenceTimer.current) clearTimeout(silenceTimer.current);
+      if (completedTimer.current) clearTimeout(completedTimer.current);
+      try { recogRef.current?.stop(); } catch {}
+    };
+  }, []);
+
   const buildRecog = (selectedLang: string) => {
     const w = window as any;
     const SRC = w.SpeechRecognition || w.webkitSpeechRecognition;
@@ -114,42 +126,42 @@ const Voice = () => {
 
   const submit = async (text?: string) => {
     const t = (text ?? transcript).trim();
-    if (!t || thinking || !user) return;
+    if (!t || thinking || !user || !db) return;
     stop(); setThinking(true); setReply(""); setJustCompleted(false); haptic(10);
 
     let acc = "";
     try {
-      await streamChat({ messages:[{role:"user",content:t}], onDelta:c=>{acc+=c;setReply(acc);}, onDone:()=>{} });
+      await streamChat({
+        messages:[{role:"user",content:t}],
+        onDelta: c => { acc+=c; if (mountedRef.current) setReply(acc); },
+        onDone: () => {},
+      });
     } catch(e) {
+      if (!mountedRef.current) return;
+      if ((e as Error).name === "AbortError") { setThinking(false); return; }
       toast.error(e instanceof Error?e.message:"AI error");
       setErrorMsg(e instanceof Error ? e.message : "AI error");
       setThinking(false);
       return;
     }
 
-    // Only create the conversation (and write both messages) once we know
-    // the AI actually replied — this avoids ending up with a saved user
-    // message and no response if the AI call had failed, since this screen
-    // has no message thread UI to show a "failed, tap to retry" state on.
+    if (!mountedRef.current) return;
+
     if (acc.trim()) {
       try {
         const convRef = await addDoc(collection(db,"conversations"), { userId:user.uid, title:t.slice(0,60), starred:false, createdAt:serverTimestamp(), updatedAt:serverTimestamp() });
         await addDoc(collection(db,"conversations",convRef.id,"messages"), { role:"user", content:t, userId:user.uid, createdAt:serverTimestamp() });
         await addDoc(collection(db,"conversations",convRef.id,"messages"), { role:"assistant", content:acc, userId:user.uid, createdAt:serverTimestamp() });
       } catch {
-        // The reply still plays/displays even if saving to history fails —
-        // losing the AI's own answer after it already streamed back to the
-        // user would be a worse experience than just not persisting it.
-        toast.error("Reply ready, but couldn't save it to your history.");
+        if (mountedRef.current) toast.error("Reply ready, but couldn't save it to your history.");
       }
+      if (!mountedRef.current) return;
       try { const u=new SpeechSynthesisUtterance(acc); u.rate=1; u.pitch=1; u.lang=lang; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch {}
-      // Briefly show the "completed" orb state once the reply has fully landed,
-      // then settle back into "responding" so the reply bubble stays legible.
       setJustCompleted(true);
       if (completedTimer.current) clearTimeout(completedTimer.current);
-      completedTimer.current = setTimeout(() => setJustCompleted(false), 1600);
+      completedTimer.current = setTimeout(() => { if (mountedRef.current) setJustCompleted(false); }, 1600);
     }
-    setThinking(false);
+    if (mountedRef.current) setThinking(false);
   };
 
   const orbState = deriveOrbState({ supported, errorMsg, listening, thinking, justCompleted, hasReply: !!reply });

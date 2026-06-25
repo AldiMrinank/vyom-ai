@@ -2,20 +2,16 @@ import { collection, query, where, getDocs, deleteDoc, Timestamp } from "firebas
 import { db } from "@/integrations/firebase/config";
 import { loadSettings } from "./settings";
 
-const LAST_RUN_KEY = "vyom_autoclear_last_run";
-const MIN_RUN_INTERVAL_MS = 6 * 60 * 60 * 1000; // don't re-check more than once every 6h
+const MIN_RUN_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-/**
- * Deletes conversations that haven't been updated in more than `autoClearDays` days.
- * No-ops if the setting is 0 ("Never") or if it already ran recently this session.
- * Call this once after auth resolves (e.g. in App.tsx) — it's safe to call on every
- * load since it self-throttles via localStorage.
- */
+// Fix CRITICAL: scope the key to userId so shared-device users don't interfere
+const lastRunKey = (uid: string) => `vyom_autoclear_${uid}`;
+
 export async function runAutoClear(userId: string): Promise<void> {
   const { autoClearDays } = loadSettings();
-  if (!autoClearDays || autoClearDays <= 0) return;
+  if (!autoClearDays || autoClearDays <= 0 || !db) return;
 
-  const lastRun = Number(localStorage.getItem(LAST_RUN_KEY) || 0);
+  const lastRun = Number(localStorage.getItem(lastRunKey(userId)) || 0);
   if (Date.now() - lastRun < MIN_RUN_INTERVAL_MS) return;
 
   try {
@@ -28,8 +24,8 @@ export async function runAutoClear(userId: string): Promise<void> {
     if (!snap.empty) {
       await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
     }
-    localStorage.setItem(LAST_RUN_KEY, String(Date.now()));
+    localStorage.setItem(lastRunKey(userId), String(Date.now()));
   } catch {
-    // Fail silently — this is a background maintenance task, not user-initiated.
+    // Background task — fail silently
   }
 }

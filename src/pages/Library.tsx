@@ -36,7 +36,10 @@ export default function Library() {
   useEffect(() => {
     if (!user) return;
     setLoading(true);
-    getLibrary(user.uid).then(data => { setItems(data); setLoading(false); });
+    getLibrary(user.uid)
+      .then(data => setItems(data))
+      .catch(() => toast.error("Failed to load library"))
+      .finally(() => setLoading(false));
   }, [user]);
 
   const remove = async (item: LibraryItem) => {

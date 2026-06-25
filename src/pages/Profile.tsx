@@ -29,24 +29,31 @@ const Profile = () => {
   const [settings, setSettings] = useState<VyomSettings>(loadSettings());
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !db) return;
+    let cancelled = false;
     (async () => {
-      const [userSnap, convSnap] = await Promise.all([
-        getDoc(doc(db,"users",user.uid)),
-        getCountFromServer(query(collection(db,"conversations"),where("userId","==",user.uid))),
-      ]);
-      const fallback = user.displayName || user.email?.split("@")[0] || "";
-      const data = userSnap.data() as Profile|undefined;
-      const pp: Profile = { displayName: data?.displayName || fallback, avatarUrl: data?.avatarUrl || user.photoURL || null, bio: data?.bio || null };
-      setProfile(pp);
-      setForm({ displayName: pp.displayName??"", avatarUrl: pp.avatarUrl??"", bio: pp.bio??"" });
-      setStats({ chats: convSnap.data().count, messages: 0 });
-      setLoading(false);
+      try {
+        const [userSnap, convSnap] = await Promise.all([
+          getDoc(doc(db,"users",user.uid)),
+          getCountFromServer(query(collection(db,"conversations"),where("userId","==",user.uid))),
+        ]);
+        if (cancelled) return;
+        const fallback = user.displayName || user.email?.split("@")[0] || "";
+        const data = userSnap.data() as Profile|undefined;
+        const pp: Profile = { displayName: data?.displayName || fallback, avatarUrl: data?.avatarUrl || user.photoURL || null, bio: data?.bio || null };
+        setProfile(pp);
+        setForm({ displayName: pp.displayName??"", avatarUrl: pp.avatarUrl??"", bio: pp.bio??"" });
+        setStats({ chats: convSnap.data().count, messages: 0 });
+        setLoading(false);
+      } catch {
+        if (!cancelled) setLoading(false);
+      }
     })();
+    return () => { cancelled = true; };
   }, [user]);
 
   const saveProfile = async () => {
-    if (!user) return; setSaving(true);
+    if (!user || !db) return; setSaving(true);
     const trimmed = form.displayName?.trim()||null;
     try {
       await Promise.all([

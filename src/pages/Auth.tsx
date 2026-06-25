@@ -139,11 +139,13 @@ const Auth = () => {
     try {
       const { user: u } = await withTimeout(createUserWithEmailAndPassword(auth, email, password));
       await updateProfile(u, { displayName: name.trim() || email.split("@")[0] });
-      await setDoc(doc(db, "users", u.uid), {
-        displayName: name.trim() || email.split("@")[0],
-        email, avatarUrl: null, bio: null,
-        createdAt: serverTimestamp(),
-      });
+      if (db) {
+        await setDoc(doc(db, "users", u.uid), {
+          displayName: name.trim() || email.split("@")[0],
+          email, avatarUrl: null, bio: null,
+          createdAt: serverTimestamp(),
+        });
+      }
       await sendEmailVerification(u);
       toast.success("Verification email sent!");
       setScreen("verify");
@@ -166,7 +168,7 @@ const Auth = () => {
           }
         }
       } catch {}
-    }, 3000);
+    }, 5000);
   };
 
   const checkVerified = async () => {
@@ -205,12 +207,13 @@ const Auth = () => {
     try {
       const provider = new GoogleAuthProvider();
       const { user: u } = await signInWithPopup(auth, provider);
-      // Create/update Firestore profile for Google users
-      await setDoc(doc(db, "users", u.uid), {
-        displayName: u.displayName || u.email?.split("@")[0],
-        email: u.email, avatarUrl: u.photoURL, bio: null,
-        createdAt: serverTimestamp(),
-      }, { merge: true });
+      if (db) {
+        await setDoc(doc(db, "users", u.uid), {
+          displayName: u.displayName || u.email?.split("@")[0],
+          email: u.email, avatarUrl: u.photoURL, bio: null,
+          createdAt: serverTimestamp(),
+        }, { merge: true });
+      }
       navigate("/");
     } catch (err: any) {
       if (err.code !== "auth/popup-closed-by-user") toast.error("Google sign-in failed");
