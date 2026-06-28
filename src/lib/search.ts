@@ -1,3 +1,5 @@
+import { auth } from "@/integrations/firebase/config";
+
 export interface SearchResult {
   title: string;
   url: string;
@@ -10,6 +12,15 @@ export interface SearchResponse {
   query: string;
 }
 
+async function authHeaders(): Promise<Record<string, string>> {
+  const user = auth?.currentUser;
+  if (!user) return {};
+  try {
+    const token = await user.getIdToken();
+    return { Authorization: `Bearer ${token}` };
+  } catch { return {}; }
+}
+
 /**
  * Web search via the /api/search Cloudflare function.
  * Falls back gracefully if the function isn't deployed yet.
@@ -18,7 +29,7 @@ export async function webSearch(query: string, limit = 5): Promise<SearchRespons
   try {
     const resp = await fetch("/api/search", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
       body: JSON.stringify({ query, limit }),
     });
     if (!resp.ok) throw new Error("Search unavailable");
@@ -29,16 +40,17 @@ export async function webSearch(query: string, limit = 5): Promise<SearchRespons
 }
 
 /**
- * Detect if a user message is a search query that would benefit
- * from live web results. Returns the cleaned search query or null.
+ * Detect if a user message would benefit from live web results.
+ * Returns the cleaned search query or null.
  */
 export function shouldSearch(userMsg: string): string | null {
   const lower = userMsg.toLowerCase().trim();
   // Explicit search signals
   if (/^search(\s+for)?:/i.test(lower)) return userMsg.replace(/^search(\s+for)?:\s*/i, "");
-  if (/^(find|look up|what is|who is|when did|where is|latest|current|today|news|price|weather)/i.test(lower) && lower.length > 20) {
-    return userMsg;
-  }
+  if (
+    /^(find|look up|what is|who is|when did|where is|latest|current|today|news|price|weather)/i.test(lower) &&
+    lower.length > 20
+  ) return userMsg;
   // Questions about recent events
   if (/202[4-9]|2030|latest|recent|current|now|today/i.test(lower) && lower.includes("?")) {
     return userMsg;
@@ -48,8 +60,8 @@ export function shouldSearch(userMsg: string): string | null {
 
 export function formatSourcesForPrompt(results: SearchResult[]): string {
   if (!results.length) return "";
-  const formatted = results.map((r, i) =>
-    `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.snippet}`
-  ).join("\n\n");
+  const formatted = results
+    .map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.snippet}`)
+    .join("\n\n");
   return `\n\n## Live web search results for context:\n${formatted}\n\nUse these sources to ground your response. Cite sources using [1], [2] etc. where relevant.`;
 }

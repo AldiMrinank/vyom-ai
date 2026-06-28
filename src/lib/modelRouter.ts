@@ -1,52 +1,49 @@
 /**
- * Model Router — automatically picks the best model for a given prompt
- * based on content signals, without requiring the user to manually switch.
- * The user's manually selected model always overrides this.
+ * Smart model router — picks the best free model for a given prompt.
+ *
+ * Routing priority:
+ *  1. Vision prompts → Gemini Flash (only model with image support)
+ *  2. Code / math / reasoning → Llama 3.3 or DeepSeek R1
+ *  3. Short factual / conversational → Gemini Flash (fastest)
+ *  4. Default → Gemini Flash
  */
 
-const ROUTER_TABLE: Array<{
-  test: (prompt: string) => boolean;
+const GEMINI_FLASH = "google/gemini-2.0-flash-exp:free";
+const LLAMA        = "meta-llama/llama-3.3-70b-instruct:free";
+const DEEPSEEK     = "deepseek/deepseek-r1:free";
+const GEMMA        = "google/gemma-3-12b-it:free";
+
+const CODE_RE = /\b(code|function|class|debug|fix|error|bug|implement|algorithm|script|program|sql|api|regex|typescript|javascript|python|react|html|css|bash|shell)\b/i;
+const MATH_RE = /\b(math|calculus|algebra|geometry|equation|proof|integral|derivative|statistics|probability|solve|calculate|formula)\b/i;
+const REASON_RE = /\b(explain|analyze|compare|evaluate|pros and cons|think step|reason|logic|argument|philosophy|essay|research|summarize)\b/i;
+const CREATIVE_RE = /\b(write|story|poem|creative|fiction|blog|script|lyrics|imagine|draft|narrative)\b/i;
+
+export interface RouteResult {
   model: string;
   reason: string;
-}> = [
-  {
-    // Coding tasks → Llama 3.3 is strong at code generation
-    test: p => /```|\bcode\b|\bfunction\b|\bclass\b|\bdebug\b|\bfix.*(bug|error)\b|\bimport\b|\bconst\b|\bdef\b|\bpublic\b/i.test(p),
-    model: "meta-llama/llama-3.3-70b-instruct:free",
-    reason: "Code task",
-  },
-  {
-    // Reasoning / math / logic → DeepSeek R1 thinks step by step
-    test: p => /\bmath\b|\bsolve\b|\bequation\b|\bprove\b|\bstep.?by.?step\b|\breason\b|\blogic\b|\bcalcul/i.test(p),
-    model: "deepseek/deepseek-r1:free",
-    reason: "Reasoning task",
-  },
-  {
-    // Image understanding — Gemini Flash supports vision
-    test: p => /\bimage\b|\bphoto\b|\bpicture\b|\bscreenshot\b|\bwhat.*(see|show|this)\b/i.test(p),
-    model: "google/gemini-2.0-flash-exp:free",
-    reason: "Vision task",
-  },
-];
-
-const DEFAULT_MODEL = "google/gemini-2.0-flash-exp:free";
-
-export interface RoutingDecision {
-  model: string;
-  reason: string;
-  wasRouted: boolean;
 }
 
-/**
- * Returns the best model for a given prompt.
- * If the user has set a specific (non-auto) model, that is respected and
- * this function is bypassed entirely in chat.ts.
- */
-export function routePrompt(prompt: string): RoutingDecision {
-  for (const rule of ROUTER_TABLE) {
-    if (rule.test(prompt)) {
-      return { model: rule.model, reason: rule.reason, wasRouted: true };
-    }
+export function routePrompt(prompt: string, hasImage = false): RouteResult {
+  if (hasImage) return { model: GEMINI_FLASH, reason: "vision" };
+
+  const lower = prompt.toLowerCase();
+
+  if (CODE_RE.test(lower)) {
+    // DeepSeek R1 for hard algorithmic/debugging prompts; Llama for normal code
+    const hard = /\b(algorithm|optimize|debug|complexity|implement|dynamic programming)\b/i.test(lower);
+    return hard
+      ? { model: DEEPSEEK, reason: "complex code/algo" }
+      : { model: LLAMA, reason: "code" };
   }
-  return { model: DEFAULT_MODEL, reason: "Default", wasRouted: false };
+
+  if (MATH_RE.test(lower)) return { model: DEEPSEEK, reason: "math/reasoning" };
+
+  if (REASON_RE.test(lower) && lower.length > 120) {
+    return { model: LLAMA, reason: "long reasoning" };
+  }
+
+  if (CREATIVE_RE.test(lower)) return { model: GEMMA, reason: "creative writing" };
+
+  // Short conversational → fastest
+  return { model: GEMINI_FLASH, reason: "default/fast" };
 }

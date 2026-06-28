@@ -7,19 +7,25 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
-    dedupe: ["react","react-dom","react/jsx-runtime","react/jsx-dev-runtime"],
+    dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"],
   },
   build: {
+    target: "es2020",
     rollupOptions: {
       output: {
         manualChunks: {
-          "vendor-react": ["react","react-dom","react-router-dom"],
-          "vendor-firebase": ["firebase/app","firebase/auth","firebase/firestore"],
-          "vendor-markdown": ["react-markdown","remark-gfm","react-syntax-highlighter"],
-          "vendor-ui": ["@radix-ui/react-dialog","@radix-ui/react-slot"],
+          "vendor-react":    ["react", "react-dom", "react-router-dom"],
+          "vendor-firebase": ["firebase/app", "firebase/auth", "firebase/firestore"],
+          "vendor-markdown": ["react-markdown", "remark-gfm"],
+          "vendor-syntax":   ["react-syntax-highlighter"],
+          "vendor-math":     ["katex", "rehype-katex", "remark-math"],
+          "vendor-ui":       ["@radix-ui/react-dialog", "@radix-ui/react-slot", "@radix-ui/react-label", "@radix-ui/react-separator", "@radix-ui/react-toggle"],
+          "vendor-query":    ["@tanstack/react-query"],
         },
       },
     },
     chunkSizeWarningLimit: 600,
+    sourcemap: false,
+    minify: "esbuild",
   },
 });

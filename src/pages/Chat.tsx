@@ -182,6 +182,7 @@ const Chat = () => {
   const send = useCallback(async (text: string, retryHistory?: Msg[]) => {
     if (streamingRef.current || !user || !db) return;
     if (!text.trim() && !imagePreview && !attachedFile) return;
+    if (text.length > maxChars) { toast.error(`Message too long (max ${maxChars} chars)`); return; }
     haptic(8);
 
     setInput("");
@@ -302,7 +303,7 @@ const Chat = () => {
     if (isFirstExchange && aiSaved && db) {
       msgCountAtLoad.current = 2;
       generateTitle(text, acc).then(title => {
-        if (db) updateDoc(doc(db, "conversations", cid), { title, updatedAt:serverTimestamp() });
+        if (db) updateDoc(doc(db, "conversations", cid), { title, updatedAt: serverTimestamp() });
       }).catch(() => {});
     } else if (db) {
       updateDoc(doc(db, "conversations", cid), { updatedAt:serverTimestamp() }).catch(() => {});
@@ -672,7 +673,11 @@ const Chat = () => {
                 setInput(e.target.value);
                 try { localStorage.setItem(draftKeyRef.current, e.target.value); } catch {}
               }}
-              onKeyDown={e => { if (e.key==="Enter" && !e.shiftKey) { e.preventDefault(); send(input); }}}
+              onKeyDown={e => {
+                if (e.key === "Enter" && !e.shiftKey && loadSettings().sendOnEnter) {
+                  e.preventDefault(); send(input);
+                }
+              }}
               placeholder={streaming ? "Vyom is thinking…" : "Message Vyom"}
               disabled={streaming}
               aria-label="Message input"
@@ -736,4 +741,3 @@ const Chat = () => {
 };
 
 export default Chat;
-// Triggering new build at Thu Jun 25 13:34:50 UTC 2026

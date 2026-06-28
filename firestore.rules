@@ -2,35 +2,69 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function validString(field, maxLen) {
+      return field is string && field.size() <= maxLen;
+    }
+
     // User profiles
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId)
+        && (!("email" in request.resource.data) || validString(request.resource.data.email, 200))
+        && (!("displayName" in request.resource.data) || validString(request.resource.data.displayName, 100))
+        && (!("bio" in request.resource.data) || validString(request.resource.data.bio, 500))
+        && (!("avatarUrl" in request.resource.data) || validString(request.resource.data.avatarUrl, 500));
 
-      // Memories — personal AI memory bank
+      // Memories
       match /memories/{memId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && validString(request.resource.data.content, 500)
+          && request.resource.data.userId == userId;
+        allow update: if isOwner(userId)
+          && validString(request.resource.data.content, 500);
+        allow delete: if isOwner(userId);
       }
 
-      // Library — saved answers, artifacts, notes, research
+      // Library
       match /library/{libId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && validString(request.resource.data.title, 200)
+          && request.resource.data.userId == userId;
+        allow update, delete: if isOwner(userId);
       }
     }
 
     // Conversations
     match /conversations/{convId} {
-      allow read, write: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Only the owner can read/list
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
 
-      // Prevent userId reassignment (privilege escalation guard)
+      // Create: must set your own userId and a valid title
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && validString(request.resource.data.title, 200);
+
+      // Update: cannot change userId; title stays bounded
       allow update: if request.auth != null
         && resource.data.userId == request.auth.uid
-        && request.resource.data.userId == request.auth.uid;
+        && request.resource.data.userId == request.auth.uid
+        && (!("title" in request.resource.data) || validString(request.resource.data.title, 200));
 
-      // Messages subcollection — verified through parent ownership
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+
+      // Messages — verify parent ownership with a get()
       match /messages/{msgId} {
-        allow read, write: if request.auth != null &&
+        allow read, create, delete: if request.auth != null &&
           get(/databases/$(database)/documents/conversations/$(convId)).data.userId == request.auth.uid;
+        allow update: if request.auth != null &&
+          get(/databases/$(database)/documents/conversations/$(convId)).data.userId == request.auth.uid
+          && validString(request.resource.data.content, 32000);
       }
     }
   }

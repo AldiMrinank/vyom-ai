@@ -1,14 +1,24 @@
 {
   "name": "Vyom AI",
-  "short_name": "Vyom AI",
+  "short_name": "Vyom",
   "description": "Your intelligent AI companion",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#080810",
   "theme_color": "#080810",
   "orientation": "portrait-primary",
+  "categories": ["productivity", "utilities"],
+  "lang": "en",
+  "scope": "/",
   "icons": [
-    { "src": "/vyom-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "/vyom-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "/vyom-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/vyom-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/vyom-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/vyom-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "New Chat", "url": "/chat", "description": "Start a new conversation" },
+    { "name": "History", "url": "/history", "description": "View past chats" },
+    { "name": "Research", "url": "/research", "description": "Deep research mode" }
   ]
 }

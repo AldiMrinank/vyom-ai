@@ -36,8 +36,20 @@ const CodeBlock = memo(({ lang, code }: { lang: string; code: string }) => {
   );
 });
 
-const MarkdownMessage = ({ content, streaming }: Props) => (
-  <div className="text-sm leading-relaxed text-foreground/90 min-w-0 [font-size:var(--base-font-size,15px)]">
+const MarkdownMessage = ({ content, streaming }: Props) => {
+  // When streaming just started, content is empty — show a pulsing orb
+  if (streaming && !content) {
+    return (
+      <div className="flex items-center gap-1.5 py-1 text-muted-foreground">
+        {[0, 1, 2].map(i => (
+          <span key={i} className="w-2 h-2 rounded-full bg-cyan-400/60 animate-bounce"
+            style={{ animationDelay: `${i * 0.15}s` }} />
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className="text-sm leading-relaxed text-foreground/90 min-w-0 [font-size:var(--base-font-size,15px)]">
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
       rehypePlugins={[rehypeKatex]}
@@ -73,7 +85,8 @@ const MarkdownMessage = ({ content, streaming }: Props) => (
       </span>
     )}
   </div>
-);
+  );
+};
 
 // Memoize the whole component: only re-render when content or streaming flag
 // actually changes. This prevents all previous messages from re-parsing their
