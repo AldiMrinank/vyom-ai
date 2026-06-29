@@ -1,14 +1,13 @@
-import { ChevronLeft, Clock, ImageIcon, Code2, FileText, Presentation, Network, MoreHorizontal } from "lucide-react";
+import { ChevronLeft, Clock, ImageIcon, Code2, FileText, Presentation, Network } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import promo from "@/assets/create-promo.png";
 
 const tools = [
   { icon: ImageIcon, title: "Image", subtitle: "Visualize anything", color: "text-emerald-400", prompt: "Create an image of " },
-  { icon: Code2, title: "Code", subtitle: "Write anything", color: "text-primary-glow", prompt: "Write code that " },
+  { icon: Code2, title: "Code", subtitle: "Write anything", color: "text-violet-400", prompt: "Write code that " },
   { icon: FileText, title: "Document", subtitle: "Draft and edit", color: "text-orange-400", prompt: "Draft a document about " },
-  { icon: Presentation, title: "Presentation", subtitle: "Slides in seconds", color: "text-secondary-glow", prompt: "Create a presentation about " },
+  { icon: Presentation, title: "Presentation", subtitle: "Slides in seconds", color: "text-blue-400", prompt: "Create a presentation about " },
   { icon: Network, title: "Mind Map", subtitle: "Ideas, connected", color: "text-pink-400", prompt: "Make a mind map for " },
-  { icon: MoreHorizontal, title: "More", subtitle: "Coming soon", color: "text-muted-foreground", prompt: "" },
 ];
 
 const Create = () => {

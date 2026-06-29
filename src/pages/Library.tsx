@@ -61,13 +61,19 @@ export default function Library() {
     <div className="min-h-dvh flex flex-col">
       {/* Header */}
       <header className="flex items-center gap-3 px-5 pt-5 pb-3">
-        <button onClick={() => navigate(-1)} className="flex h-10 w-10 items-center justify-center glass rounded-full">
+        <button onClick={() => navigate(-1)} className="flex h-10 w-10 items-center justify-center glass rounded-full active:scale-95 transition">
           <ChevronLeft className="h-4 w-4" />
         </button>
         <div className="flex-1">
           <h1 className="font-display text-xl font-bold">Library</h1>
           <p className="text-[11px] text-muted-foreground">{items.length} saved items</p>
         </div>
+        {/* FIX: Plus button was imported but never rendered — now shows note creation */}
+        <button onClick={() => { haptic(8); navigate("/chat?q=Create a note: "); }}
+          className="glass flex h-10 w-10 items-center justify-center rounded-full border border-violet-500/30 text-violet-400 active:scale-95 transition"
+          title="Add note">
+          <Plus className="h-4 w-4"/>
+        </button>
       </header>
 
       {/* Search */}

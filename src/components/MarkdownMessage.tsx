@@ -42,7 +42,7 @@ const MarkdownMessage = ({ content, streaming }: Props) => {
     return (
       <div className="flex items-center gap-1.5 py-1 text-muted-foreground">
         {[0, 1, 2].map(i => (
-          <span key={i} className="w-2 h-2 rounded-full bg-cyan-400/60 animate-bounce"
+          <span key={i} className="w-2 h-2 rounded-full bg-violet-400/60 animate-bounce"
             style={{ animationDelay: `${i * 0.15}s` }} />
         ))}
       </div>
@@ -81,7 +81,7 @@ const MarkdownMessage = ({ content, streaming }: Props) => {
     </ReactMarkdown>
     {streaming && (
       <span className="inline-flex gap-0.5 ml-1 align-middle">
-        {[0,1,2].map(i => <span key={i} className="w-1 h-1 rounded-full bg-cyan-400 animate-bounce" style={{animationDelay:`${i*0.15}s`}}/>)}
+        {[0,1,2].map(i => <span key={i} className="w-1 h-1 rounded-full bg-violet-400 animate-bounce" style={{animationDelay:`${i*0.15}s`}}/>)}
       </span>
     )}
   </div>

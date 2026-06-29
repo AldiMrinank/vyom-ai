@@ -1,5 +1,4 @@
 import { Component, ReactNode, useState, useEffect, lazy, Suspense } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
@@ -45,14 +44,13 @@ class ErrorBoundary extends Component<{children:ReactNode},{err:string|null}> {
         <div className="text-4xl mb-4">⚠️</div>
         <h1 className="text-xl font-bold mb-2">Something went wrong</h1>
         <p className="text-white/50 text-sm mb-6">{this.state.err}</p>
-        <button onClick={()=>window.location.reload()} className="rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 px-6 py-2.5 text-sm font-medium">Reload</button>
+        <button onClick={()=>window.location.reload()} className="rounded-xl bg-gradient-to-r from-violet-600 to-purple-700 px-6 py-2.5 text-sm font-medium">Reload</button>
       </div>
     );
     return this.props.children;
   }
 }
 
-// Swipe between tabs
 const NAV_ORDER = ["/","/explore","/create","/history","/profile"];
 const SwipeNavigator = ({ children }: { children: ReactNode }) => {
   const location = useLocation();
@@ -66,9 +64,6 @@ const SwipeNavigator = ({ children }: { children: ReactNode }) => {
     const idx = NAV_ORDER.indexOf(location.pathname);
     if (idx === -1) return;
     const next = diff > 0 ? NAV_ORDER[idx+1] : NAV_ORDER[idx-1];
-    // navigate() keeps React Router's internal state in sync immediately,
-    // so anything reading useLocation() (like the active tab indicator)
-    // updates on the same render instead of lagging a frame behind.
     if (next) navigate(next);
   };
 
@@ -79,14 +74,11 @@ const SwipeNavigator = ({ children }: { children: ReactNode }) => {
   );
 };
 
-const queryClient = new QueryClient();
-
 const AppInner = () => {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const { user } = useAuth();
 
   useEffect(() => {
-    // Apply saved font size on load
     applyFontSize(loadSettings().fontSize);
     if (!localStorage.getItem("onboarded")) {
       const t = setTimeout(() => setShowOnboarding(true), 400);
@@ -129,14 +121,12 @@ const AppInner = () => {
 const App = () => (
   <ErrorBoundary>
     <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <Sonner />
-        <BrowserRouter>
-          <AuthProvider>
-            <AppInner />
-          </AuthProvider>
-        </BrowserRouter>
-      </QueryClientProvider>
+      <Sonner />
+      <BrowserRouter>
+        <AuthProvider>
+          <AppInner />
+        </AuthProvider>
+      </BrowserRouter>
     </ThemeProvider>
   </ErrorBoundary>
 );

@@ -237,7 +237,7 @@ Write in a clear, factual, well-organized style. Cite sources inline.`;
         </button>
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <Telescope className="h-4.5 w-4.5 text-cyan-400" />
+            <Telescope className="h-5 w-5 text-cyan-400" />
             <h1 className="font-display text-xl font-bold">Deep Research</h1>
           </div>
           <p className="text-[11px] text-muted-foreground">Multi-step AI research with live sources</p>

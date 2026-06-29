@@ -4,7 +4,8 @@ import { Mail, Lock, User, Eye, EyeOff, ArrowRight, Loader2, CheckCircle2, Rocke
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword,
   sendEmailVerification, sendPasswordResetEmail,
-  GoogleAuthProvider, signInWithPopup, updateProfile, reload,
+  GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
+  updateProfile, reload,
 } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/integrations/firebase/config";
@@ -39,7 +40,7 @@ const GradBtn = ({ onClick, type="button", disabled, children }: {
   onClick?: () => void; type?: "button"|"submit"; disabled?: boolean; children: React.ReactNode;
 }) => (
   <button type={type} onClick={onClick} disabled={disabled}
-    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-500 to-purple-600 py-3.5 font-semibold text-white shadow-lg shadow-purple-500/30 transition active:scale-[0.99] disabled:opacity-60">
+    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-purple-700 py-3.5 font-semibold text-white shadow-lg shadow-purple-500/30 transition active:scale-[0.99] disabled:opacity-60">
     {children}
   </button>
 );
@@ -202,10 +203,21 @@ const Auth = () => {
     } finally { setBusy(false); }
   };
 
+  // FIX: iOS Safari in PWA standalone mode blocks signInWithPopup.
+  // Detect the PWA context and fall back to signInWithRedirect.
   const googleSignIn = async () => {
     setBusy(true);
     try {
       const provider = new GoogleAuthProvider();
+      const isStandalone = window.matchMedia("(display-mode: standalone)").matches
+        || (navigator as any).standalone === true;
+
+      if (isStandalone) {
+        // redirect flow — page will reload; result handled via getRedirectResult on mount
+        await signInWithRedirect(auth, provider);
+        return; // page reloads after this
+      }
+
       const { user: u } = await signInWithPopup(auth, provider);
       if (db) {
         await setDoc(doc(db, "users", u.uid), {
@@ -220,11 +232,29 @@ const Auth = () => {
     } finally { setBusy(false); }
   };
 
+  // Handle redirect result on mount (for iOS PWA flow)
+  useEffect(() => {
+    if (!auth) return;
+    getRedirectResult(auth).then(async result => {
+      if (!result?.user) return;
+      const u = result.user;
+      if (db) {
+        await setDoc(doc(db, "users", u.uid), {
+          displayName: u.displayName || u.email?.split("@")[0],
+          email: u.email, avatarUrl: u.photoURL, bio: null,
+          createdAt: serverTimestamp(),
+        }, { merge: true });
+      }
+      navigate("/");
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const Socials = () => (
     <div className="flex gap-3 w-full">
       <button onClick={googleSignIn} disabled={busy}
-        className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-white/5 border border-white/10 py-3 transition hover:bg-white/8 active:scale-95 disabled:opacity-60">
-        <GoogleIcon/><span className="text-sm font-medium">Google</span>
+        className="flex-1 flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 py-3.5 text-sm font-semibold transition hover:bg-white/8 active:scale-95 disabled:opacity-60 shadow-sm">
+        <GoogleIcon/><span>Continue with Google</span>
       </button>
     </div>
   );
@@ -351,7 +381,7 @@ const Auth = () => {
             <h1 className="font-display text-[2rem] font-bold text-white mb-2 tracking-tight">Welcome aboard! 🎉</h1>
             <p className="text-sm text-white/50 mb-8 text-center">Your account has been created successfully.</p>
             <div className="w-full rounded-2xl bg-white/5 border border-white/10 p-4 flex items-center gap-4 mb-8">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center shrink-0 shadow-lg">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-600 to-purple-700 flex items-center justify-center shrink-0 shadow-lg">
                 <Rocket className="w-6 h-6 text-white"/>
               </div>
               <p className="text-sm text-white/65">You're all set to explore the power of Vyom AI.</p>

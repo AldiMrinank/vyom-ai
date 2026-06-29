@@ -1,10 +1,27 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { Home, Compass, Telescope, Clock, User, BookMarked } from "lucide-react";
+import { Home, Compass, Clock, User, BookMarked } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import { collection, query, where, getDocs, limit } from "firebase/firestore";
 import { db } from "@/integrations/firebase/config";
 import { useAuth } from "@/hooks/useAuth";
+
+// VA monogram SVG logo — replaces the 1.4MB PNG
+const VyomLogo = ({ size = 28 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="vaGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#22D3EE"/>
+        <stop offset="50%" stopColor="#8B5CF6"/>
+        <stop offset="100%" stopColor="#EC4899"/>
+      </linearGradient>
+    </defs>
+    <path d="M4 8 L14 30 L20 16 L26 30 L36 8" stroke="url(#vaGrad)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+    <path d="M17 19 L20 25 L23 19" stroke="url(#vaGrad)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+    {/* sparkle */}
+    <path d="M20 13 L20.6 15 L22.5 15 L21 16.2 L21.5 18 L20 17 L18.5 18 L19 16.2 L17.5 15 L19.4 15 Z" fill="white" opacity="0.9"/>
+  </svg>
+);
 
 const AppShell = () => {
   const location = useLocation();
@@ -24,60 +41,95 @@ const BottomNav = () => {
 
   useEffect(() => {
     if (!user || !db) return;
-    const last = localStorage.getItem("last_visit") || new Date(0).toISOString();
+    // FIX: scope last_visit key to current user to prevent cross-user badge bleed
+    const lastVisitKey = `last_visit_${user.uid}`;
+    const last = localStorage.getItem(lastVisitKey) || new Date(0).toISOString();
     getDocs(query(
       collection(db, "conversations"),
       where("userId", "==", user.uid),
       where("updatedAt", ">", new Date(last)),
       limit(10)
     )).then(snap => setUnread(snap.size)).catch(() => {});
-    return () => { localStorage.setItem("last_visit", new Date().toISOString()); };
+    return () => { localStorage.setItem(lastVisitKey, new Date().toISOString()); };
   }, [user]);
 
+  // FIX: badge is now actually passed into navItems so it renders
   const navItems = [
-    { to: "/",         icon: Home,      label: "Home"     },
-    { to: "/explore",  icon: Compass,   label: "Explore"  },
-    { to: "/research", icon: Telescope, label: "Research", center: true },
-    { to: "/library",  icon: BookMarked,label: "Library"  },
-    { to: "/profile",  icon: User,      label: "Profile"  },
+    { to: "/",        icon: Home,       label: "Home",    badge: 0 },
+    { to: "/explore", icon: Compass,    label: "Explore", badge: 0 },
+    { to: "/history", icon: Clock,      label: "History", badge: unread },
+    { to: "/library", icon: BookMarked, label: "Library", badge: 0 },
+    { to: "/profile", icon: User,       label: "Profile", badge: 0 },
   ];
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-md px-4" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}>
-      <div className="glass-card flex items-center justify-around rounded-full px-2 py-2 shadow-neon">
-        {navItems.map(item => (
-          <NavLink
-            key={item.to} to={item.to} end={item.to === "/"}
-            onClick={() => {
-              if (item.to === "/library") {
-                localStorage.setItem("last_visit", new Date().toISOString());
-                setUnread(0);
-              }
-            }}
-            className={({ isActive }) => cn(
-              "group relative flex flex-col items-center justify-center rounded-full transition-all duration-300",
-              item.center ? "-mt-8 h-14 w-14" : "h-12 w-12",
-              isActive && !item.center && "text-primary-glow"
-            )}>
-            {({ isActive }) =>
-              item.center ? (
-                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-aurora shadow-neon transition-transform group-hover:scale-110 group-active:scale-95" title="Deep Research">
-                  <item.icon className="h-6 w-6 text-primary-foreground" strokeWidth={2.5} />
-                </span>
-              ) : (
-                <span className="relative flex flex-col items-center">
-                  <item.icon className={cn("h-5 w-5 transition-all duration-300", isActive ? "text-primary-glow" : "text-muted-foreground group-hover:text-foreground")} strokeWidth={isActive ? 2.5 : 2} />
-                  {(item as any).badge > 0 && (
-                    <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
-                      {(item as any).badge > 9 ? "9+" : (item as any).badge}
+    <nav className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-md px-4"
+      style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))" }}>
+      {/* Neon rim on top edge */}
+      <div className="h-px w-full mb-0" style={{ background: "linear-gradient(90deg, transparent, rgba(139,92,246,0.5) 30%, rgba(34,211,238,0.4) 70%, transparent)" }} />
+      <div className="glass flex items-center justify-around rounded-[28px] px-1 py-2 shadow-neon border border-white/[0.07]"
+        style={{ backdropFilter: "blur(32px) saturate(150%)" }}>
+        {navItems.map((item, idx) => {
+          // Center slot (index 2) = Vyom orb CTA
+          if (idx === 2) {
+            return (
+              <NavLink key={item.to} to={item.to} end className="group relative -mt-7 flex flex-col items-center">
+                {({ isActive }) => (
+                  <>
+                    <span className={cn(
+                      "flex h-14 w-14 items-center justify-center rounded-full transition-all duration-300",
+                      "shadow-[0_0_24px_rgba(139,92,246,0.6)] border-2 border-purple-500/40",
+                      isActive ? "scale-105" : "group-hover:scale-105 group-active:scale-95",
+                      // Pulse animation
+                      "animate-[orb-pulse_3s_ease-in-out_infinite]"
+                    )}
+                      style={{ background: "linear-gradient(135deg, #8B5CF6, #6D28D9, #3B82F6)" }}>
+                      <VyomLogo size={26} />
                     </span>
+                    <span className="mt-1 text-[9px] text-muted-foreground/60">{item.label}</span>
+                  </>
+                )}
+              </NavLink>
+            );
+          }
+          return (
+            <NavLink key={item.to} to={item.to} end={item.to === "/"}
+              onClick={() => {
+                if (item.to === "/history") {
+                  const key = `last_visit_${user?.uid ?? "anon"}`;
+                  localStorage.setItem(key, new Date().toISOString());
+                  setUnread(0);
+                }
+              }}
+              className={({ isActive }) => cn(
+                "group relative flex flex-col items-center gap-0.5 rounded-2xl px-3 py-1.5 transition-all duration-200",
+                isActive && "text-primary-glow"
+              )}>
+              {({ isActive }) => (
+                <>
+                  <div className="relative">
+                    <item.icon className={cn(
+                      "h-5 w-5 transition-all duration-200",
+                      isActive ? "text-purple-400" : "text-muted-foreground group-hover:text-foreground"
+                    )} strokeWidth={isActive ? 2.5 : 2} />
+                    {/* FIX: badge now renders because it's in the item object */}
+                    {item.badge > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white shadow-[0_0_8px_rgba(239,68,68,0.6)]">
+                        {item.badge > 9 ? "9+" : item.badge}
+                      </span>
+                    )}
+                  </div>
+                  <span className={cn("text-[9px] font-medium transition-all", isActive ? "text-purple-400" : "text-muted-foreground/50")}>
+                    {item.label}
+                  </span>
+                  {isActive && (
+                    <span className="absolute bottom-0 left-1/2 -translate-x-1/2 h-0.5 w-4 rounded-full bg-purple-400 shadow-[0_0_6px_rgba(167,139,250,0.8)]" />
                   )}
-                  {isActive && <span className="absolute -bottom-1 h-1 w-1 rounded-full bg-primary-glow shadow-[0_0_8px_hsl(var(--primary-glow))]" />}
-                </span>
-              )
-            }
-          </NavLink>
-        ))}
+                </>
+              )}
+            </NavLink>
+          );
+        })}
       </div>
     </nav>
   );

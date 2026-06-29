@@ -11,7 +11,6 @@ import { parseFile, ParsedFile } from "@/lib/fileReader";
 import { toast } from "sonner";
 import MarkdownMessage from "@/components/MarkdownMessage";
 import Skeleton from "@/components/Skeleton";
-import vyomLogo from "@/assets/vyom-logo.png";
 import { useMemory } from "@/hooks/useMemory";
 import { detectArtifact } from "@/components/artifacts/ArtifactDetector";
 import type { DetectedArtifact } from "@/components/artifacts/ArtifactDetector";
@@ -442,7 +441,11 @@ const Chat = () => {
         </button>
         <button onClick={()=>setShowTimestamps(t=>!t)} className="flex flex-col items-center gap-0" aria-label="Toggle timestamps">
           <div className="flex items-center gap-2">
-            <img src={vyomLogo} alt="Vyom AI" className="h-6 w-6 object-contain"/>
+            <svg width="24" height="24" viewBox="0 0 40 40" fill="none" aria-hidden>
+              <defs><linearGradient id="chatLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#22D3EE"/><stop offset="50%" stopColor="#8B5CF6"/><stop offset="100%" stopColor="#EC4899"/></linearGradient></defs>
+              <path d="M4 8L14 30L20 16L26 30L36 8" stroke="url(#chatLogoGrad)" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+              <path d="M20 13L20.5 15L22.5 15L21 16L21.5 17.5L20 16.5L18.5 17.5L19 16L17.5 15L19.5 15Z" fill="white" opacity="0.9"/>
+            </svg>
             <span className="font-display text-base font-semibold">Vyom AI</span>
           </div>
           <span className="text-[10px] text-muted-foreground/60">{modelLabel}</span>
@@ -514,7 +517,13 @@ const Chat = () => {
             <p className="text-center text-sm text-muted-foreground py-12">No messages match "{searchQ}"</p>
           ) : (
             <div className="flex flex-col items-center justify-center py-20 text-center">
-              <img src={vyomLogo} alt="" aria-hidden className="h-16 w-16 object-contain opacity-50 mb-4"/>
+              <div className="h-20 w-20 mb-4 opacity-40">
+                <svg viewBox="0 0 40 40" fill="none" aria-hidden>
+                  <defs><linearGradient id="emptyLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#22D3EE"/><stop offset="50%" stopColor="#8B5CF6"/><stop offset="100%" stopColor="#EC4899"/></linearGradient></defs>
+                  <path d="M4 8L14 30L20 16L26 30L36 8" stroke="url(#emptyLogoGrad)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                  <path d="M20 13L20.5 15L22.5 15L21 16L21.5 17.5L20 16.5L18.5 17.5L19 16L17.5 15L19.5 15Z" fill="white" opacity="0.9"/>
+                </svg>
+              </div>
               <p className="font-display text-lg font-semibold">Ask Vyom anything</p>
               <p className="text-xs text-muted-foreground mt-1">Your conversation starts here.</p>
             </div>
@@ -532,12 +541,13 @@ const Chat = () => {
                     className="w-full rounded-2xl bg-white/10 border border-white/20 px-4 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-500 resize-none"/>
                   <div className="flex gap-2 justify-end">
                     <button onClick={()=>setEditingId(null)} className="px-3 py-1.5 rounded-xl text-xs bg-white/5 border border-white/10">Cancel</button>
-                    <button onClick={()=>saveEdit(m)} className="px-3 py-1.5 rounded-xl text-xs bg-gradient-to-r from-cyan-500 to-purple-600 text-white">Save</button>
+                    <button onClick={()=>saveEdit(m)} className="px-3 py-1.5 rounded-xl text-xs bg-gradient-to-r from-violet-600 to-purple-700 text-white">Save</button>
                   </div>
                 </div>
               ) : (
                 <div className="group relative max-w-[82%]">
-                  <div className="rounded-2xl rounded-tr-sm border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm whitespace-pre-wrap">
+                  {/* Deep purple user bubble — matches the design */}
+                  <div className="msg-user rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm whitespace-pre-wrap">
                     {stripMeta(m.content)}
                   </div>
                   <button onClick={()=>{setEditingId(m.id);setEditVal(stripMeta(m.content));haptic(8);}}
@@ -557,7 +567,16 @@ const Chat = () => {
             </div>
           ) : (
             <div key={m.id} className="flex animate-slide-up gap-3">
-              <img src={vyomLogo} alt="" aria-hidden className="mt-1 h-7 w-7 shrink-0 object-contain rounded-full bg-white/5 p-0.5"/>
+              {/* VA avatar with gradient border */}
+              <div className="mt-1 h-8 w-8 shrink-0 rounded-full p-[2px] flex-shrink-0"
+                style={{ background:"linear-gradient(135deg,#8B5CF6,#3B82F6,#22D3EE)" }}>
+                <div className="h-full w-full rounded-full bg-[#1a0d2e] flex items-center justify-center">
+                  <svg width="14" height="14" viewBox="0 0 40 40" fill="none">
+                    <defs><linearGradient id="avGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#22D3EE"/><stop offset="100%" stopColor="#A78BFA"/></linearGradient></defs>
+                    <path d="M4 8L14 30L20 16L26 30L36 8" stroke="url(#avGrad)" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                  </svg>
+                </div>
+              </div>
               <div className="flex-1 min-w-0">
                 <MarkdownMessage content={m.content} streaming={streaming && m.id.startsWith("tmp-")}/>
                 {showTimestamps && m.createdAt && <p className="text-[10px] text-muted-foreground mt-1">{fmtTime(m.createdAt)}</p>}
@@ -691,7 +710,7 @@ const Chat = () => {
               </button>
             ) : input.trim() || imagePreview || attachedFile ? (
               <button type="button" onClick={()=>send(input)} aria-label="Send message"
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-r from-cyan-500 to-purple-600 shrink-0 active:scale-95 transition">
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-r from-violet-600 to-purple-700 shrink-0 active:scale-95 transition">
                 <ArrowUp className="h-4 w-4 text-white" aria-hidden />
               </button>
             ) : (
