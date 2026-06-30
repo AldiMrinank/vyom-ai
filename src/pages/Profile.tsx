@@ -36,7 +36,7 @@ const Profile = () => {
   const [settings, setSettings] = useState<VyomSettings>(loadSettings());
 
   useEffect(() => {
-    if (!user || !db) return;
+    if (!user || !db) { setLoading(false); return; }
     let cancelled = false;
     (async () => {
       try {
@@ -65,7 +65,7 @@ const Profile = () => {
   }, [user]);
 
   const saveProfile = async () => {
-    if (!user || !db) return; setSaving(true);
+    if (!user || !db) { return; } setSaving(true);
     const trimmed = form.displayName?.trim()||null;
     try {
       await Promise.all([

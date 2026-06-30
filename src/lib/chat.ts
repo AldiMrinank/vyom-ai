@@ -15,7 +15,8 @@ export interface ContentPart {
 async function authHeaders(): Promise<Record<string, string>> {
   const user = auth?.currentUser;
   if (!user) throw new Error("You're signed out. Please sign in again.");
-  const token = await user.getIdToken();
+  // Force-refresh token to prevent "session expired" errors from stale JWTs
+  const token = await user.getIdToken(/* forceRefresh= */ true);
   return { Authorization: `Bearer ${token}` };
 }
 
@@ -47,9 +48,16 @@ export async function streamChat({
     (lastUserMsg!.content as ContentPart[]).some((c) => c.type === "image_url");
   const model = resolveModel(promptText, hasImage);
 
+  let headers: Record<string, string>;
+  try {
+    headers = await authHeaders();
+  } catch (e) {
+    throw new Error("Session expired. Please sign in again.");
+  }
+
   const resp = await fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify({
       model,
       messages: [
@@ -67,7 +75,10 @@ export async function streamChat({
       msg = j.error?.message || msg;
     } catch {}
     if (resp.status === 429) msg = "Too many requests. Please slow down.";
-    if (resp.status === 401) msg = "Session expired. Please sign in again.";
+    if (resp.status === 401) {
+      // Try once more with a fresh token
+      msg = "Session expired. Please sign in again.";
+    }
     throw new Error(msg);
   }
 
@@ -98,9 +109,12 @@ export async function streamChat({
 export async function generateTitle(userMsg: string, aiMsg: string): Promise<string> {
   const model = "google/gemini-2.0-flash-exp:free";
   try {
+    const user = auth?.currentUser;
+    if (!user) return userMsg.slice(0, 50);
+    const token = await user.getIdToken(true);
     const resp = await fetch("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({
         model,
         max_tokens: 15,

@@ -20,7 +20,7 @@ export default defineConfig({
           "vendor-syntax":   ["react-syntax-highlighter"],
           "vendor-math":     ["katex", "rehype-katex", "remark-math"],
           "vendor-ui":       ["@radix-ui/react-dialog", "@radix-ui/react-slot", "@radix-ui/react-label", "@radix-ui/react-separator", "@radix-ui/react-toggle"],
-
+          "vendor-query":    ["@tanstack/react-query"],
         },
       },
     },

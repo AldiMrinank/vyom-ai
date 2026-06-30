@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { X, Mic, MicOff, Loader2, Send, Globe } from "lucide-react";
+import { X, Mic, MicOff, Loader2, Send, Globe, RefreshCw } from "lucide-react";
 import EmotiveOrb, { ORB_STATES } from "@/components/EmotiveOrb";
 import type { OrbState } from "@/components/EmotiveOrb";
 import Waveform from "@/components/Waveform";
@@ -12,25 +12,23 @@ import { haptic } from "@/lib/haptic";
 import { toast } from "sonner";
 
 const LANGS = [
-  { code:"en-US", label:"English" },
-  { code:"hi-IN", label:"Hindi" },
-  { code:"te-IN", label:"Telugu" },
-  { code:"es-ES", label:"Spanish" },
-  { code:"fr-FR", label:"French" },
-  { code:"de-DE", label:"German" },
-  { code:"ja-JP", label:"Japanese" },
+  { code: "en-US", label: "English" },
+  { code: "hi-IN", label: "Hindi" },
+  { code: "te-IN", label: "Telugu" },
+  { code: "es-ES", label: "Spanish" },
+  { code: "fr-FR", label: "French" },
+  { code: "de-DE", label: "German" },
+  { code: "ja-JP", label: "Japanese" },
 ];
 
-// Quick prompt pills shown at the bottom
 const QUICK_PROMPTS = [
-  { label:"🔥 Roast me",     prompt:"Roast me in a fun way!" },
-  { label:"📅 Study plan",  prompt:"Create a quick study plan for me." },
-  { label:"😂 Joke",        prompt:"Tell me a funny joke." },
-  { label:"✨ Surprise",    prompt:"Surprise me with something amazing!" },
-  { label:"💡 Idea",        prompt:"Give me a creative business idea." },
+  { label: "🔥 Roast me",    prompt: "Roast me in a fun way!" },
+  { label: "📅 Study plan",  prompt: "Create a quick study plan for me." },
+  { label: "😂 Joke",        prompt: "Tell me a funny joke." },
+  { label: "✨ Surprise",    prompt: "Surprise me with something amazing!" },
+  { label: "💡 Idea",        prompt: "Give me a creative business idea." },
 ];
 
-// Speech bubble messages per state
 const STATE_BUBBLES: Record<OrbState, string> = {
   idle:       "I'm all ears. Talk to me 💜",
   listening:  "I'm listening… Go on!",
@@ -40,10 +38,9 @@ const STATE_BUBBLES: Record<OrbState, string> = {
   excited:    "This is so cool! 😍 You'll love it!",
   surprised:  "Whoa! That's surprising! 😮",
   completed:  "All done! ✅ Anything else?",
-  error:      "Oops! 😅 Let me try again…",
+  error:      "Something went wrong. Tap retry 🔄",
 };
 
-// Strip markdown before TTS — fixes bug where ** and ## were spoken
 function stripMarkdown(text: string): string {
   return text
     .replace(/#{1,6}\s/g, "")
@@ -74,13 +71,13 @@ const Voice = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const recogRef = useRef<any>(null);
-  const silenceTimer = useRef<ReturnType<typeof setTimeout>|null>(null);
-  const completedTimer = useRef<ReturnType<typeof setTimeout>|null>(null);
+  const silenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const completedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
-  const audioCtxRef = useRef<AudioContext|null>(null);
-  const analyserRef = useRef<AnalyserNode|null>(null);
-  const micStreamRef = useRef<MediaStream|null>(null);
-  const animFrameRef = useRef<number|null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const animFrameRef = useRef<number | null>(null);
 
   const [supported, setSupported] = useState(true);
   const [listening, setListening] = useState(false);
@@ -91,9 +88,10 @@ const Voice = () => {
   const [lang, setLang] = useState("en-US");
   const [showLangs, setShowLangs] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [errorDetail, setErrorDetail] = useState("");
   const [justCompleted, setJustCompleted] = useState(false);
-  const [amplitude, setAmplitude] = useState(0); // 0–1 from real mic
-  const [typeInput, setTypeInput] = useState(""); // type mid-voice
+  const [amplitude, setAmplitude] = useState(0);
+  const [typeInput, setTypeInput] = useState("");
 
   useEffect(() => {
     mountedRef.current = true;
@@ -111,17 +109,18 @@ const Voice = () => {
   useEffect(() => {
     const w = window as any;
     if (!w.SpeechRecognition && !w.webkitSpeechRecognition) {
-      setSupported(false); setErrorMsg("Speech recognition isn't supported. Try Chrome.");
+      setSupported(false);
+      setErrorMsg("Speech recognition isn't supported on this browser.");
+      setErrorDetail("Try Chrome or Edge for voice support.");
     }
   }, []);
 
   useEffect(() => {
     if (!listening) return;
-    const id = setInterval(() => setSeconds(s => s+1), 1000);
+    const id = setInterval(() => setSeconds(s => s + 1), 1000);
     return () => clearInterval(id);
   }, [listening]);
 
-  // Real mic amplitude via Web Audio API
   const startAmplitude = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -136,12 +135,17 @@ const Voice = () => {
       const tick = () => {
         if (!mountedRef.current) return;
         analyser.getByteFrequencyData(buf);
-        const avg = buf.reduce((a,b) => a+b,0)/buf.length;
-        setAmplitude(Math.min(avg/128, 1));
+        const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
+        setAmplitude(Math.min(avg / 128, 1));
         animFrameRef.current = requestAnimationFrame(tick);
       };
       tick();
-    } catch {}
+    } catch (err: any) {
+      if (err.name === "NotAllowedError") {
+        setErrorMsg("Microphone permission denied.");
+        setErrorDetail("Please allow microphone access in your browser settings.");
+      }
+    }
   };
 
   const stopAmplitude = () => {
@@ -156,128 +160,201 @@ const Voice = () => {
     const SRC = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!SRC) return null;
     const r = new SRC();
-    r.continuous = true; r.interimResults = true; r.lang = selectedLang;
+    r.continuous = true;
+    r.interimResults = true;
+    r.lang = selectedLang;
     r.onresult = (e: any) => {
       let final = "";
-      for (let i=e.resultIndex;i<e.results.length;i++) final += e.results[i][0].transcript;
+      for (let i = e.resultIndex; i < e.results.length; i++) final += e.results[i][0].transcript;
       setTranscript(final);
       if (silenceTimer.current) clearTimeout(silenceTimer.current);
-      // FIX: check mountedRef BEFORE calling submit, not after awaiting
       silenceTimer.current = setTimeout(() => {
         if (!mountedRef.current) return;
         if (final.trim()) submit(final);
       }, 2500);
     };
     r.onerror = (e: any) => {
-      const msgs: Record<string,string> = { "not-allowed":"Microphone permission denied.", "no-speech":"No speech detected.", "network":"Network error." };
-      setErrorMsg(msgs[e.error] || `Error: ${e.error}`);
-      setListening(false); stopAmplitude();
+      const msgs: Record<string, [string, string]> = {
+        "not-allowed": ["Microphone permission denied.", "Please allow microphone access in your browser settings."],
+        "no-speech":   ["No speech detected.", "Make sure your microphone is working and try again."],
+        "network":     ["Network error.", "Check your internet connection and try again."],
+        "aborted":     ["Recording stopped.", ""],
+      };
+      const [msg, detail] = msgs[e.error] || [`Voice error: ${e.error}`, "Please try again."];
+      if (e.error !== "aborted") {
+        setErrorMsg(msg);
+        setErrorDetail(detail);
+      }
+      setListening(false);
+      stopAmplitude();
     };
     r.onend = () => { setListening(false); stopAmplitude(); };
     return r;
   };
 
-  const start = () => {
-    haptic([10,50]);
-    setTranscript(""); setReply(""); setSeconds(0); setErrorMsg(""); setJustCompleted(false);
+  const clearError = useCallback(() => {
+    setErrorMsg("");
+    setErrorDetail("");
+  }, []);
+
+  const start = useCallback(() => {
+    haptic([10, 50]);
+    clearError();
+    setTranscript(""); setReply(""); setSeconds(0); setJustCompleted(false);
     const r = buildRecog(lang);
     if (!r) return;
     recogRef.current = r;
     try { r.start(); setListening(true); startAmplitude(); } catch {}
-  };
+  }, [lang]);
 
-  const stop = () => {
+  const stop = useCallback(() => {
     if (silenceTimer.current) clearTimeout(silenceTimer.current);
     try { recogRef.current?.stop(); } catch {}
-    setListening(false); stopAmplitude();
-  };
+    setListening(false);
+    stopAmplitude();
+  }, []);
+
+  const reset = useCallback(() => {
+    stop();
+    clearError();
+    setTranscript(""); setReply(""); setJustCompleted(false); setTypeInput("");
+    haptic(8);
+  }, [stop, clearError]);
 
   const submit = async (text?: string) => {
     const t = (text ?? (typeInput.trim() || transcript)).trim();
-    if (!t || thinking || !user || !db) return;
-    stop(); setThinking(true); setReply(""); setJustCompleted(false); setTypeInput(""); haptic(10);
+    if (!t || thinking) return;
+
+    if (!user) {
+      toast.error("Please sign in to use voice chat.");
+      return;
+    }
+
+    stop();
+    clearError();
+    setThinking(true);
+    setReply("");
+    setJustCompleted(false);
+    setTypeInput("");
+    haptic(10);
 
     let acc = "";
     try {
-      // FIX: check mountedRef before starting streamChat, not after
       if (!mountedRef.current) return;
       await streamChat({
-        messages:[{role:"user",content:t}],
-        onDelta: c => { acc+=c; if (mountedRef.current) setReply(acc); },
+        messages: [{ role: "user", content: t }],
+        onDelta: c => { acc += c; if (mountedRef.current) setReply(acc); },
         onDone: () => {},
       });
-    } catch(e) {
+    } catch (e) {
       if (!mountedRef.current) return;
+      const msg = e instanceof Error ? e.message : "AI error";
       if ((e as Error).name === "AbortError") { setThinking(false); return; }
-      toast.error(e instanceof Error?e.message:"AI error");
-      setErrorMsg(e instanceof Error ? e.message : "AI error");
-      setThinking(false); return;
+      // Show a meaningful error based on the error type
+      if (msg.includes("sign") || msg.includes("Session")) {
+        setErrorMsg("Session expired.");
+        setErrorDetail("Please sign out and sign in again to continue.");
+        toast.error("Session expired. Please sign in again.");
+      } else if (msg.includes("network") || msg.includes("fetch")) {
+        setErrorMsg("Network error.");
+        setErrorDetail("Check your internet connection and try again.");
+      } else if (msg.includes("Too many")) {
+        setErrorMsg("Too many requests.");
+        setErrorDetail("Please wait a moment before trying again.");
+      } else {
+        setErrorMsg("AI response failed.");
+        setErrorDetail(msg);
+      }
+      setThinking(false);
+      return;
     }
 
     if (!mountedRef.current) return;
 
     if (acc.trim()) {
       try {
-        const convRef = await addDoc(collection(db,"conversations"), { userId:user.uid, title:t.slice(0,60), starred:false, createdAt:serverTimestamp(), updatedAt:serverTimestamp() });
-        await addDoc(collection(db,"conversations",convRef.id,"messages"), { role:"user", content:t, userId:user.uid, createdAt:serverTimestamp() });
-        await addDoc(collection(db,"conversations",convRef.id,"messages"), { role:"assistant", content:acc, userId:user.uid, createdAt:serverTimestamp() });
+        if (db) {
+          const convRef = await addDoc(collection(db, "conversations"), {
+            userId: user.uid, title: t.slice(0, 60), starred: false,
+            createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+          });
+          await addDoc(collection(db, "conversations", convRef.id, "messages"), { role: "user", content: t, userId: user.uid, createdAt: serverTimestamp() });
+          await addDoc(collection(db, "conversations", convRef.id, "messages"), { role: "assistant", content: acc, userId: user.uid, createdAt: serverTimestamp() });
+        }
       } catch {
-        if (mountedRef.current) toast.error("Reply ready, but couldn't save it to your history.");
+        if (mountedRef.current) toast.error("Reply ready, but couldn't save to history.");
       }
       if (!mountedRef.current) return;
-      // FIX: strip markdown before TTS so ** and ## aren't spoken aloud
       try {
         const clean = stripMarkdown(acc);
         const u = new SpeechSynthesisUtterance(clean);
-        u.rate=1; u.pitch=1; u.lang=lang;
+        u.rate = 1; u.pitch = 1; u.lang = lang;
         speechSynthesis.cancel();
         speechSynthesis.speak(u);
       } catch {}
       setJustCompleted(true);
       if (completedTimer.current) clearTimeout(completedTimer.current);
-      completedTimer.current = setTimeout(() => { if (mountedRef.current) setJustCompleted(false); }, 1600);
+      completedTimer.current = setTimeout(() => {
+        if (mountedRef.current) setJustCompleted(false);
+      }, 1600);
     }
     if (mountedRef.current) setThinking(false);
   };
 
   const orbState = deriveOrbState({ supported, errorMsg, listening, thinking, justCompleted, hasReply: !!reply });
   const cfg = ORB_STATES[orbState];
-  const mm=String(Math.floor(seconds/60)).padStart(2,"0");
-  const ss=String(seconds%60).padStart(2,"0");
-
-  // Real amplitude if listening, else fallback to state-based
+  const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const ss = String(seconds % 60).padStart(2, "0");
   const waveAmp = listening ? (0.2 + amplitude * 1.5) : cfg.waveAmp;
 
   return (
     <div className="relative flex min-h-dvh flex-col overflow-hidden px-5 py-5 bg-[#080810]">
-      {/* Background glow changes per state */}
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-1/2 top-1/3 h-[480px] w-[480px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-15 blur-3xl transition-all duration-1000"
-          style={{ background: `radial-gradient(circle, ${cfg.glow[0]}, ${cfg.glow[1]}, transparent 70%)` }} />
+      {/* Animated background glow */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div
+          className="absolute left-1/2 top-1/3 h-[500px] w-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-20 blur-3xl transition-all duration-1000"
+          style={{ background: `radial-gradient(circle, ${cfg.glow[0]}, ${cfg.glow[1]}, transparent 70%)` }}
+        />
+        {/* Subtle grid */}
+        <div className="absolute inset-0 opacity-[0.03]"
+          style={{ backgroundImage: "linear-gradient(rgba(139,92,246,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(139,92,246,0.5) 1px, transparent 1px)", backgroundSize: "40px 40px" }} />
       </div>
 
       {/* Header */}
       <header className="relative z-10 flex w-full items-center justify-between">
-        <button onClick={()=>{stop();navigate(-1);}} className="glass flex h-11 w-11 items-center justify-center rounded-full active:scale-95 transition">
-          <X className="h-5 w-5" />
+        <button
+          onClick={() => { stop(); navigate(-1); }}
+          className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/5 backdrop-blur-sm active:scale-95 transition"
+          aria-label="Go back"
+        >
+          <X className="h-5 w-5 text-white/80" />
         </button>
+
         <div className="text-center">
-          <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-semibold text-white/70">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-500/30 bg-purple-500/10 px-3 py-1 text-[11px] font-semibold text-purple-300">
             ✨ GenZ AI
           </span>
-          <p className="font-display text-sm font-semibold tabular-nums mt-1">{mm}:{ss}</p>
+          <p className="font-mono text-sm font-semibold tabular-nums mt-1 text-white/70">{mm}:{ss}</p>
         </div>
-        <button onClick={()=>setShowLangs(s=>!s)} className="glass flex h-11 w-11 items-center justify-center rounded-full active:scale-95 transition">
-          <Globe className="h-4 w-4" />
+
+        <button
+          onClick={() => setShowLangs(s => !s)}
+          className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/5 backdrop-blur-sm active:scale-95 transition"
+          aria-label="Select language"
+        >
+          <Globe className="h-4 w-4 text-white/80" />
         </button>
       </header>
 
+      {/* Language picker */}
       {showLangs && (
-        <div className="absolute top-20 right-5 z-20 glass-card rounded-2xl p-2 space-y-1 animate-fade-in shadow-neon">
-          {LANGS.map(l=>(
-            <button key={l.code} onClick={()=>{setLang(l.code);setShowLangs(false);haptic(8);}}
-              className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${lang===l.code?"bg-purple-500/20 text-purple-300":"text-muted-foreground hover:bg-white/5"}`}>
-              {lang===l.code && <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0"/>}
+        <div className="absolute top-20 right-5 z-20 rounded-2xl border border-white/10 bg-[#0f0f1a]/90 backdrop-blur-xl p-2 space-y-1 shadow-2xl">
+          {LANGS.map(l => (
+            <button key={l.code}
+              onClick={() => { setLang(l.code); setShowLangs(false); haptic(8); }}
+              className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-sm transition ${lang === l.code ? "bg-purple-500/20 text-purple-300 font-medium" : "text-white/60 hover:bg-white/5"}`}
+            >
+              {lang === l.code && <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" />}
               {l.label}
             </button>
           ))}
@@ -285,20 +362,19 @@ const Voice = () => {
       )}
 
       {/* Title */}
-      <div className="relative z-10 flex flex-col items-center text-center mt-5 mb-0">
-        <h1 className="text-[32px] font-bold leading-none font-display"
-          style={{ background:"linear-gradient(90deg,#A78BFA 0%,#60A5FA 55%,#22D3EE 100%)", WebkitBackgroundClip:"text", backgroundClip:"text", color:"transparent" }}>
+      <div className="relative z-10 flex flex-col items-center text-center mt-6 mb-0">
+        <h1 className="text-[34px] font-bold leading-none tracking-tight"
+          style={{ background: "linear-gradient(90deg,#A78BFA 0%,#60A5FA 55%,#22D3EE 100%)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>
           AI Voice
         </h1>
-        {/* Live speech bubble */}
-        <div className="mt-2 min-h-[28px] flex items-center">
-          <p className="text-[13px] text-white/60 animate-fade-in" key={orbState}>
-            {STATE_BUBBLES[orbState]}
+        <div className="mt-2 min-h-[24px] flex items-center">
+          <p className="text-[13px] text-white/50 animate-fade-in" key={orbState + errorMsg}>
+            {errorMsg ? errorMsg : STATE_BUBBLES[orbState]}
           </p>
         </div>
       </div>
 
-      {/* Orb + waveforms — the hero */}
+      {/* Orb hero */}
       <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-4 -mt-2">
         <div className="flex items-center justify-center gap-3">
           <Waveform side="left" amp={waveAmp} speed={cfg.waveSpeed} color={cfg.glow[0]} />
@@ -312,66 +388,95 @@ const Voice = () => {
           <span className="text-[12px] text-white/60 font-medium">{cfg.label}</span>
         </div>
 
-        {/* Transcript / reply cards */}
-        {transcript && !thinking && (
-          <p className="max-w-xs text-balance rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-muted-foreground animate-fade-in text-center">
+        {/* Error detail + retry */}
+        {errorMsg && (
+          <div className="max-w-xs w-full rounded-2xl border border-red-500/20 bg-red-900/20 px-4 py-3 text-center animate-fade-in">
+            {errorDetail && <p className="text-xs text-red-300/80 mb-2">{errorDetail}</p>}
+            <button
+              onClick={() => { clearError(); start(); }}
+              disabled={!supported}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-red-500/20 border border-red-500/30 px-3 py-1.5 text-xs text-red-300 font-medium active:scale-95 transition disabled:opacity-50"
+            >
+              <RefreshCw className="h-3 w-3" /> Retry
+            </button>
+          </div>
+        )}
+
+        {/* Transcript card */}
+        {transcript && !thinking && !errorMsg && (
+          <p className="max-w-xs text-balance rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white/60 animate-fade-in text-center">
             "{transcript}"
           </p>
         )}
+
+        {/* Reply card */}
         {reply && (
-          <div className="max-w-xs max-h-36 overflow-y-auto rounded-2xl border border-purple-500/20 bg-purple-900/20 px-4 py-3 text-sm text-foreground/90 text-left animate-fade-in">
+          <div className="max-w-xs max-h-36 overflow-y-auto rounded-2xl border border-purple-500/20 bg-purple-900/20 px-4 py-3 text-sm text-white/90 text-left animate-fade-in">
             {reply}
           </div>
         )}
       </div>
 
-      {/* Type mid-voice input */}
+      {/* Type input */}
       <div className="relative z-10 mx-0 mb-3">
-        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-          <input value={typeInput} onChange={e=>setTypeInput(e.target.value)}
-            onKeyDown={e=>{ if(e.key==="Enter" && typeInput.trim()) submit(); }}
-            placeholder="Reply to AI Voice…" className="flex-1 bg-transparent text-sm placeholder:text-white/30 focus:outline-none" />
+        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm px-3 py-2">
+          <input
+            value={typeInput}
+            onChange={e => setTypeInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && typeInput.trim()) submit(); }}
+            placeholder="Reply to AI Voice…"
+            className="flex-1 bg-transparent text-sm placeholder:text-white/25 focus:outline-none text-white"
+          />
           {typeInput.trim() && (
-            <button onClick={()=>submit()} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-600 active:scale-90">
-              <Send className="h-4 w-4 text-white"/>
+            <button onClick={() => submit()} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-600 active:scale-90 transition">
+              <Send className="h-4 w-4 text-white" />
             </button>
           )}
         </div>
       </div>
 
-      {/* Quick prompt pills */}
+      {/* Quick prompts */}
       <div className="relative z-10 -mx-5 flex gap-2 overflow-x-auto px-5 pb-1 scrollbar-hide mb-3">
-        {QUICK_PROMPTS.map(p=>(
-          <button key={p.label} onClick={()=>submit(p.prompt)} disabled={thinking}
-            className="shrink-0 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[12px] font-medium text-white/70 active:scale-95 transition disabled:opacity-40">
+        {QUICK_PROMPTS.map(p => (
+          <button key={p.label} onClick={() => submit(p.prompt)} disabled={thinking}
+            className="shrink-0 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[12px] font-medium text-white/70 active:scale-95 transition disabled:opacity-40 whitespace-nowrap">
             {p.label}
           </button>
         ))}
       </div>
 
-      {/* Main controls */}
+      {/* Controls */}
       <div className="relative z-10 flex items-center justify-center gap-6 pb-2">
-        <button onClick={()=>navigate("/chat")} className="glass flex h-14 w-14 items-center justify-center rounded-full active:scale-95 transition">
-          <span className="text-xs font-bold">Aa</span>
+        <button onClick={() => navigate("/chat")}
+          className="flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/5 active:scale-95 transition">
+          <span className="text-xs font-bold text-white/80">Aa</span>
         </button>
+
         {thinking ? (
-          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-aurora shadow-neon">
+          <div className="flex h-20 w-20 items-center justify-center rounded-full shadow-[0_0_30px_rgba(139,92,246,0.5)]"
+            style={{ background: "linear-gradient(135deg, #8B5CF6, #6D28D9, #3B82F6)" }}>
             <Loader2 className="h-7 w-7 animate-spin text-white" />
           </div>
         ) : transcript && !listening ? (
-          <button onClick={()=>submit()} className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-aurora shadow-neon active:scale-95 transition">
+          <button onClick={() => submit()}
+            className="flex h-20 w-20 items-center justify-center rounded-full active:scale-95 transition shadow-[0_0_30px_rgba(139,92,246,0.5)]"
+            style={{ background: "linear-gradient(135deg, #8B5CF6, #6D28D9, #3B82F6)" }}>
             <Send className="h-7 w-7 text-white" />
           </button>
         ) : (
-          <button onClick={listening?stop:start} disabled={!supported}
-            className="flex h-20 w-20 items-center justify-center rounded-full shadow-neon active:scale-95 disabled:opacity-50 transition"
-            style={{ background: `linear-gradient(135deg, ${cfg.glow[0]}, ${cfg.glow[1]})` }}>
-            {listening ? <MicOff className="h-7 w-7 text-white"/> : <Mic className="h-7 w-7 text-white"/>}
+          <button
+            onClick={listening ? stop : start}
+            disabled={!supported}
+            className="flex h-20 w-20 items-center justify-center rounded-full active:scale-95 disabled:opacity-50 transition"
+            style={{ background: `linear-gradient(135deg, ${cfg.glow[0]}, ${cfg.glow[1]})`, boxShadow: `0 0 30px ${cfg.glow[0]}50` }}
+          >
+            {listening ? <MicOff className="h-7 w-7 text-white" /> : <Mic className="h-7 w-7 text-white" />}
           </button>
         )}
-        <button onClick={()=>{stop();setTranscript("");setReply("");setErrorMsg("");setJustCompleted(false);haptic(8);}}
-          className="glass flex h-14 w-14 items-center justify-center rounded-full active:scale-95 transition">
-          <X className="h-5 w-5"/>
+
+        <button onClick={reset}
+          className="flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/5 active:scale-95 transition">
+          <X className="h-5 w-5 text-white/80" />
         </button>
       </div>
     </div>
