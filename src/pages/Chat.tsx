@@ -158,9 +158,14 @@ const Chat = () => {
   useEffect(() => { convIdRef.current = convId; }, [convId]);
   useEffect(() => { paramsRef.current = params; }, [params]);
 
-  const ensureConv = useCallback(async (firstMsg: string): Promise<string|null> => {
+  const ensureConv = useCallback(async (firstMsg: string): Promise<string | null> => {
     if (convIdRef.current) return convIdRef.current;
-    if (!user || !db) return null;
+    if (!user) return null;
+    if (!db) {
+      const localId = "local-" + Date.now();
+      setConvId(localId); convIdRef.current = localId;
+      return localId;
+    }
     try {
       const ref = await addDoc(collection(db, "conversations"), {
         userId: user.uid, title: firstMsg.slice(0,60),
@@ -172,14 +177,16 @@ const Chat = () => {
       setParams(np, { replace: true });
       return ref.id;
     } catch {
-      toast.error("Could not start chat");
-      return null;
+      const localId = "local-" + Date.now();
+      setConvId(localId); convIdRef.current = localId;
+      toast.error("Couldn't save chat history — but you can still chat!");
+      return localId;
     }
   }, [user, setParams]);
 
   // FIX: send wrapped in useCallback, reads DRAFT_KEY from ref not closure
   const send = useCallback(async (text: string, retryHistory?: Msg[]) => {
-    if (streamingRef.current || !user || !db) return;
+    if (streamingRef.current || !user) return;
     if (!text.trim() && !imagePreview && !attachedFile) return;
     if (text.length > maxChars) { toast.error(`Message too long (max ${maxChars} chars)`); return; }
     haptic(8);
@@ -210,16 +217,18 @@ const Chat = () => {
     const cid = await ensureConv(displayText);
     if (!cid || !mountedRef.current) return;
 
-    const msgsRef = collection(db, "conversations", cid, "messages");
+    const isLocal = cid.startsWith("local-");
+    const msgsRef = (!isLocal && db) ? collection(db, "conversations", cid, "messages") : null;
     const dbContent = img ? `${displayText}\n\n[Image attached]` : displayText;
 
-    let userRefId: string;
-    try {
-      const userRef = await addDoc(msgsRef, { role:"user", content:dbContent, userId:user.uid, createdAt:serverTimestamp() });
-      userRefId = userRef.id;
-    } catch {
-      toast.error("Failed to send message");
-      return;
+    let userRefId: string = "local-u-" + Date.now();
+    if (msgsRef) {
+      try {
+        const userRef = await addDoc(msgsRef, { role:"user", content:dbContent, userId:user.uid, createdAt:serverTimestamp() });
+        userRefId = userRef.id;
+      } catch {
+        // Non-fatal: still show the message, just won't be in history
+      }
     }
 
     const userMsg: Msg = { id: userRefId, role:"user", content:dbContent, image: img||undefined };
@@ -281,18 +290,21 @@ const Chat = () => {
 
     let aiSaved = false;
     if (acc.trim()) {
-      try {
-        const aiRef = await addDoc(msgsRef, { role:"assistant", content:acc, userId:user.uid, createdAt:serverTimestamp() });
-        if (!mountedRef.current) return;
+      const detected = detectArtifact(acc);
+      if (detected) { setArtifact(detected); setShowArtifact(true); }
+      const { model } = loadSettings();
+      setModelLabel(getModelLabel(model));
+      if (msgsRef) {
+        try {
+          const aiRef = await addDoc(msgsRef, { role:"assistant", content:acc, userId:user.uid, createdAt:serverTimestamp() });
+          if (!mountedRef.current) return;
+          aiSaved = true;
+          setMessages(m => m.map(x => x.id===tempId ? {...x, id:aiRef.id} : x));
+        } catch { /* non-fatal */ }
+      } else {
+        // No Firestore — just assign a local ID
+        setMessages(m => m.map(x => x.id===tempId ? {...x, id:"local-a-"+Date.now()} : x));
         aiSaved = true;
-        setMessages(m => m.map(x => x.id===tempId ? {...x, id:aiRef.id} : x));
-        const detected = detectArtifact(acc);
-        if (detected) { setArtifact(detected); setShowArtifact(true); }
-        // Update model label in case Smart Route picked something
-        const { model } = loadSettings();
-        setModelLabel(getModelLabel(model));
-      } catch {
-        if (mountedRef.current) setMessages(m => m.filter(x => x.id !== tempId));
       }
     } else {
       setMessages(m => m.filter(x => x.id !== tempId));

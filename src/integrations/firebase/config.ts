@@ -1,6 +1,12 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  persistentSingleTabManager,
+  getFirestore,
+} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
@@ -13,25 +19,42 @@ const firebaseConfig = {
 
 let app: ReturnType<typeof initializeApp> | undefined;
 let auth: ReturnType<typeof getAuth> | undefined;
-let db: ReturnType<typeof initializeFirestore> | undefined;
+let db: ReturnType<typeof getFirestore> | undefined;
 
 if (firebaseConfig.apiKey) {
   try {
-    app = initializeApp(firebaseConfig);
+    app  = initializeApp(firebaseConfig);
     auth = getAuth(app);
-    // Enable offline persistence with multi-tab support.
-    // This means Firestore reads are served from IndexedDB cache instantly
-    // when offline, and sync to the server when the connection returns.
-    db = initializeFirestore(app, {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager(),
-      }),
-    });
+
+    // persistentMultipleTabManager uses SharedWorker/BroadcastChannel — not
+    // supported on iOS Safari or Android WebView. Fall back gracefully so
+    // that `db` is always defined after a successful Firebase init, even on
+    // mobile browsers that don't support multi-tab sync.
+    try {
+      db = initializeFirestore(app, {
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager(),
+        }),
+      });
+    } catch {
+      console.warn("Multi-tab Firestore persistence not supported — falling back to single-tab.");
+      try {
+        db = initializeFirestore(app, {
+          localCache: persistentLocalCache({
+            tabManager: persistentSingleTabManager({ forceOwnership: true }),
+          }),
+        });
+      } catch {
+        // Last resort: no offline persistence, but fully functional online
+        console.warn("Offline persistence unavailable — using online-only Firestore.");
+        db = getFirestore(app);
+      }
+    }
   } catch (error) {
     console.error("Firebase initialization failed:", error);
   }
 } else {
-  console.warn("Firebase API Key is missing. Check your environment variables.");
+  console.warn("Firebase API Key is missing. Check your VITE_FIREBASE_* environment variables.");
 }
 
 export { app, auth, db };
