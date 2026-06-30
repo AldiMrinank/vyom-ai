@@ -264,6 +264,7 @@ const Chat = () => {
     try {
       await streamChat({
         messages: history,
+        getToken: () => user!.getIdToken(true),
         signal: abortRef.current.signal,
         onDelta: chunk => {
           acc += chunk;
@@ -313,7 +314,7 @@ const Chat = () => {
     const isFirstExchange = msgCountAtLoad.current === 0 && (retryHistory ?? messages).length === 0;
     if (isFirstExchange && aiSaved && db) {
       msgCountAtLoad.current = 2;
-      generateTitle(text, acc).then(title => {
+      generateTitle(text, acc, () => user!.getIdToken(true)).then(title => {
         if (db) updateDoc(doc(db, "conversations", cid), { title, updatedAt: serverTimestamp() });
       }).catch(() => {});
     } else if (db) {

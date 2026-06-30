@@ -243,6 +243,7 @@ const Voice = () => {
       if (!mountedRef.current) return;
       await streamChat({
         messages: [{ role: "user", content: t }],
+        getToken: () => user!.getIdToken(true),
         onDelta: c => { acc += c; if (mountedRef.current) setReply(acc); },
         onDone: () => {},
       });

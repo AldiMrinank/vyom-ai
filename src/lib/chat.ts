@@ -1,6 +1,5 @@
 import { loadSettings } from "./settings";
 import { routePrompt } from "./modelRouter";
-import { auth } from "@/integrations/firebase/config";
 
 export interface ChatMsg {
   role: "user" | "assistant" | "system";
@@ -12,79 +11,87 @@ export interface ContentPart {
   image_url?: { url: string };
 }
 
-async function authHeaders(): Promise<Record<string, string>> {
-  const user = auth?.currentUser;
-  if (!user) throw new Error("You're signed out. Please sign in again.");
-  // Force-refresh token to prevent "session expired" errors from stale JWTs
-  const token = await user.getIdToken(/* forceRefresh= */ true);
-  return { Authorization: `Bearer ${token}` };
-}
-
 function resolveModel(userMsg: string, hasImage = false): string {
   const { model } = loadSettings();
   if (model === "vyom-auto") return routePrompt(userMsg, hasImage).model;
   return model;
 }
 
+// Token getter is passed in from the React component where Firebase Auth
+// is guaranteed to be ready (the user object came from onIdTokenChanged).
+// This avoids the race where auth.currentUser is null during async init.
 export async function streamChat({
   messages,
+  getToken,
   onDelta,
   onDone,
   signal,
 }: {
   messages: ChatMsg[];
+  getToken: () => Promise<string>;      // caller provides this
   onDelta: (chunk: string) => void;
   onDone: () => void;
   signal?: AbortSignal;
 }) {
   const { systemPrompt } = loadSettings();
+
   const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
   const promptText =
     typeof lastUserMsg?.content === "string"
       ? lastUserMsg.content
-      : (lastUserMsg?.content as any[])?.[0]?.text ?? "";
+      : (lastUserMsg?.content as ContentPart[])?.[0]?.text ?? "";
   const hasImage =
     Array.isArray(lastUserMsg?.content) &&
     (lastUserMsg!.content as ContentPart[]).some((c) => c.type === "image_url");
+
   const model = resolveModel(promptText, hasImage);
 
-  let headers: Record<string, string>;
+  // Get a fresh token from the caller — they hold the live Firebase User object
+  let token: string;
   try {
-    headers = await authHeaders();
-  } catch (e) {
+    token = await getToken();
+  } catch {
     throw new Error("Session expired. Please sign in again.");
   }
 
-  const resp = await fetch("/api/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...messages.filter((m) => m.role !== "system"),
-      ],
-    }),
-    signal,
-  });
+  let resp: Response;
+  try {
+    resp = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...messages.filter((m) => m.role !== "system"),
+        ],
+      }),
+      signal,
+    });
+  } catch (err: any) {
+    if (err?.name === "AbortError") throw err;
+    throw new Error("Network error — check your internet connection.");
+  }
 
   if (!resp.ok || !resp.body) {
-    let msg = "AI request failed";
+    let msg = `AI request failed (${resp.status})`;
     try {
-      const j = await resp.json();
-      msg = j.error?.message || msg;
+      const j = await resp.clone().json();
+      if (j?.error?.message) msg = j.error.message;
     } catch {}
+    if (resp.status === 401) msg = "Session expired. Please sign in again.";
     if (resp.status === 429) msg = "Too many requests. Please slow down.";
-    if (resp.status === 401) {
-      // Try once more with a fresh token
-      msg = "Session expired. Please sign in again.";
-    }
+    if (resp.status === 400) msg = "Bad request — the model may be unavailable. Try switching model in Settings.";
     throw new Error(msg);
   }
 
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -106,33 +113,37 @@ export async function streamChat({
   onDone();
 }
 
-export async function generateTitle(userMsg: string, aiMsg: string): Promise<string> {
-  const model = "google/gemini-2.0-flash-exp:free";
+export async function generateTitle(
+  userMsg: string,
+  aiMsg: string,
+  getToken: () => Promise<string>
+): Promise<string> {
   try {
-    const user = auth?.currentUser;
-    if (!user) return userMsg.slice(0, 50);
-    const token = await user.getIdToken(true);
+    const token = await getToken();
     const resp = await fetch("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify({
-        model,
+        model: "google/gemini-2.0-flash-exp:free",
         max_tokens: 15,
         messages: [
           {
             role: "system",
             content:
-              "Generate a 3-5 word title for this conversation. Reply with ONLY the title, no quotes, no punctuation at end.",
+              "Generate a 3-5 word title for this conversation. Reply with ONLY the title, no quotes, no punctuation at the end.",
           },
           { role: "user", content: `User: ${userMsg}\nAI: ${aiMsg.slice(0, 150)}` },
         ],
       }),
     });
-    if (!resp.ok) throw new Error();
-    const reader = resp.body!.getReader();
+    if (!resp.ok || !resp.body) throw new Error();
+
+    const reader = resp.body.getReader();
     const dec = new TextDecoder();
-    let buf = "",
-      title = "";
+    let buf = "", title = "";
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
