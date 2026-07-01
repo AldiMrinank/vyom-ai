@@ -117,9 +117,18 @@ export async function onRequestPost({ request, env }) {
 
   let uid;
   try {
-    const payload = await verifyFirebaseIdToken(idToken, env.FIREBASE_PROJECT_ID);
+    const projectId = env.FIREBASE_PROJECT_ID || env.VITE_FIREBASE_PROJECT_ID;
+    if (!projectId) {
+      console.error("[vyom] Missing FIREBASE_PROJECT_ID and VITE_FIREBASE_PROJECT_ID env vars");
+      return new Response(
+        JSON.stringify({ error: { message: "Server misconfiguration: Firebase project ID not set." } }),
+        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders(origin) } }
+      );
+    }
+    const payload = await verifyFirebaseIdToken(idToken, projectId);
     uid = payload.sub;
-  } catch {
+  } catch (authErr) {
+    console.error("[vyom] Token verification failed:", authErr?.message);
     return new Response(
       JSON.stringify({ error: { message: "Invalid or expired session. Please sign in again." } }),
       { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders(origin) } }

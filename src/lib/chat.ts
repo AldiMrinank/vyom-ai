@@ -79,12 +79,15 @@ export async function streamChat({
   if (!resp.ok || !resp.body) {
     let msg = `AI request failed (${resp.status})`;
     try {
-      const j = await resp.clone().json();
+      const body = await resp.clone().text();
+      console.error("[vyom] API error response:", resp.status, body);
+      const j = JSON.parse(body);
       if (j?.error?.message) msg = j.error.message;
     } catch {}
-    if (resp.status === 401) msg = "Session expired. Please sign in again.";
+    if (resp.status === 401) msg = "Session expired — please sign out and sign in again.";
     if (resp.status === 429) msg = "Too many requests. Please slow down.";
-    if (resp.status === 400) msg = "Bad request — the model may be unavailable. Try switching model in Settings.";
+    if (resp.status === 400) msg = "Model unavailable. Go to Profile → Settings and switch the AI model.";
+    if (resp.status === 500) msg = "Server error — check Cloudflare environment variables.";
     throw new Error(msg);
   }
 
